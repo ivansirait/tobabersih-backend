@@ -1,0 +1,207 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            BigInt         @id @default(autoincrement())
+  email         String         @unique
+  passwordHash  String         @map("password_hash")
+  fullName      String         @map("full_name")
+  phoneNumber   String?        @map("phone_number")
+  role          Role           @default(WARGA)
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @default(now()) @map("updated_at")
+  isActive      Boolean        @default(true)
+  notifications Notification[]
+  posts         Post[]
+  reports       Report[]
+  trucks        Truck[]
+  volumes       Volume[]
+
+  @@map("users")
+}
+
+model Location {
+  id             BigInt                    @id @default(autoincrement())
+  name           String
+  locationType   String                    @map("location_type")
+  latitude       Decimal                   @db.Decimal(10, 8)
+  longitude      Decimal                   @db.Decimal(11, 8)
+  geom           Unsupported("geography")?
+  address        String?
+  capacityVolume Int?                      @map("capacity_volume")
+  createdAt      DateTime                  @default(now()) @map("created_at")
+  updatedAt      DateTime                  @default(now()) @map("updated_at")
+  reports        Report[]
+  routesStart    Route[]                   @relation("StartLocation")
+
+  @@map("locations")
+}
+
+model Report {
+  id            BigInt                    @id @default(autoincrement())
+  userId        BigInt                    @map("user_id")
+  locationId    BigInt?                   @map("location_id")
+  latitude      Decimal                   @db.Decimal(10, 8)
+  longitude     Decimal                   @db.Decimal(11, 8)
+  geom          Unsupported("geography")?
+  photoUrl      String?                   @map("photo_url")
+  description   String?
+  latCompleted  Decimal?                  @map("lat_completed") @db.Decimal(10, 8)
+  longCompleted Decimal?                  @map("long_completed") @db.Decimal(11, 8)
+  photoAfterUrl String?                   @map("photo_after_url")
+  status        ReportStatus              @default(PENDING)
+  createdAt     DateTime                  @default(now()) @map("created_at")
+  updatedAt     DateTime                  @default(now()) @map("updated_at")
+  jenisSampah   String?                   @map("jenis_sampah")
+  location      Location?                 @relation(fields: [locationId], references: [id])
+  user          User                      @relation(fields: [userId], references: [id])
+  volumes       Volume[]
+
+  @@map("reports")
+}
+
+model Truck {
+  id              BigInt            @id @default(autoincrement())
+  plateNumber     String            @unique @map("plate_number")
+  operatorId      BigInt?           @map("operator_id")
+  currentLat      Decimal?          @map("current_lat") @db.Decimal(10, 8)
+  currentLong     Decimal?          @map("current_long") @db.Decimal(11, 8)
+  lastPing        DateTime?         @map("last_ping")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @default(now()) @map("updated_at")
+  status          TruckStatus       @default(AVAILABLE)
+  locationHistory LocationHistory[]
+  routes          Route[]
+  operator        User?             @relation(fields: [operatorId], references: [id])
+
+  @@map("trucks")
+}
+
+model LocationHistory {
+  id        BigInt   @id @default(autoincrement())
+  truckId   BigInt   @map("truck_id")
+  latitude  Decimal  @db.Decimal(10, 8)
+  longitude Decimal  @db.Decimal(11, 8)
+  createdAt DateTime @default(now()) @map("created_at")
+  truck     Truck    @relation(fields: [truckId], references: [id])
+
+  @@map("location_history")
+}
+
+model Route {
+  id              BigInt    @id @default(autoincrement())
+  truckId         BigInt    @map("truck_id")
+  date            DateTime  @db.Date
+  startLocationId BigInt?   @map("start_location_id")
+  status          String    @default("PLANNED") @map("route_status")
+  startLocation   Location? @relation("StartLocation", fields: [startLocationId], references: [id])
+  truck           Truck     @relation(fields: [truckId], references: [id])
+
+  @@map("routes")
+}
+
+model Volume {
+  id             BigInt   @id @default(autoincrement())
+  reportId       BigInt?  @map("report_id")
+  volumeKg       Decimal  @map("volume_kg") @db.Decimal(10, 2)
+  recordedAt     DateTime @default(now()) @map("recorded_at")
+  recordedBy     BigInt?  @map("recorded_by")
+  recordedByUser User?    @relation(fields: [recordedBy], references: [id])
+  report         Report?  @relation(fields: [reportId], references: [id])
+
+  @@map("volumes")
+}
+
+model Post {
+  id          Int      @id @default(autoincrement())
+  title       String
+  slug        String   @unique
+  content     String
+  category    Category @default(BERITA)
+  imageUrl    String?  @map("image_url")
+  isPublished Boolean  @default(false) @map("is_published")
+  isFeatured  Boolean  @default(false) @map("is_featured")
+  authorId    BigInt   @map("author_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  author      User     @relation(fields: [authorId], references: [id])
+
+  @@map("posts")
+}
+
+model Document {
+  id            Int      @id @default(autoincrement())
+  title         String
+  description   String?
+  fileUrl       String   @map("file_url")
+  fileSize      String?  @map("file_size")
+  downloadCount Int      @default(0) @map("download_count")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("documents")
+}
+
+model GalleryAlbum {
+  id          Int            @id @default(autoincrement())
+  title       String
+  description String?
+  coverUrl    String?        @map("cover_url")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  photos      GalleryPhoto[]
+
+  @@map("gallery_albums")
+}
+
+model GalleryPhoto {
+  id        Int          @id @default(autoincrement())
+  albumId   Int          @map("album_id")
+  imageUrl  String       @map("image_url")
+  caption   String?
+  createdAt DateTime     @default(now()) @map("created_at")
+  album     GalleryAlbum @relation(fields: [albumId], references: [id])
+
+  @@map("gallery_photos")
+}
+
+model Notification {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt   @map("user_id")
+  title     String
+  message   String
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+enum Role {
+  WARGA
+  OPERATOR
+  ADMIN
+}
+
+enum ReportStatus {
+  PENDING
+  DITINDAKLANJUTI
+  SELESAI
+}
+
+enum TruckStatus {
+  AVAILABLE
+  BUSY
+  MAINTENANCE
+}
+
+enum Category {
+  BERITA
+  PENGUMUMAN
+  PROFIL_DLH
+}
