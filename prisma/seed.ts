@@ -1,44 +1,80 @@
-import { PrismaClient, Category } from '@prisma/client'; // Tambahkan Category di sini
+import { PrismaClient, Category } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
+// Prototype BigInt agar tidak error
+(BigInt.prototype as any).toJSON = function () { return this.toString(); };
+
 async function main() {
   console.log('🌱 Memulai proses Seeding...');
 
-  const hashedPassword = await bcrypt.hash('sampah123', 10);
+  // 1. Akun Admin
+  let admin = await prisma.user.findUnique({ where: { email: "admin@dlh.com" } });
+  if (!admin) {
+    admin = await prisma.user.create({
+      data: {
+        fullName: "Administrator DLH",
+        email: "admin@dlh.com",
+        passwordHash: "admin123",
+        role: "ADMIN",
+        isActive: true
+      }
+    });
+    console.log("✅ User Admin OK (admin@dlh.com)");
+  } else {
+    console.log("✅ User Admin sudah ada di database");
+  }
 
-  const admin = await prisma.user.upsert({
-    where: { email: 'admin@dlh.com' },
-    update: { passwordHash: hashedPassword },
-    create: {
-      email: 'admin@dlh.com',
-      fullName: 'Administrator DLH',
-      passwordHash: hashedPassword,
-      role: 'ADMIN',
-      isActive: true,
-    },
-  });
+  // 2. Akun Warga (Budi)
+  let warga = await prisma.user.findUnique({ where: { email: "budi@gmail.com" } });
+  if (!warga) {
+    await prisma.user.create({
+      data: {
+        fullName: "Budi Santoso",
+        email: "budi@gmail.com",
+        passwordHash: "budi123",
+        role: "WARGA",
+        isActive: true
+      }
+    });
+    console.log("✅ User Warga OK (budi@gmail.com)");
+  }
 
-  // TENTUKAN TIPENYA DI SINI AGAR TIDAK ERROR (as { ... }[])
+  // 3. Akun Supir (Pak Tarjo)
+  let supir = await prisma.user.findUnique({ where: { email: "tarjo@gmail.com" } });
+  if (!supir) {
+    await prisma.user.create({
+      data: {
+        fullName: "Pak Tarjo",
+        email: "tarjo@gmail.com",
+        passwordHash: "tarjo123",
+        role: "OPERATOR",
+        isActive: true
+      }
+    });
+    console.log("✅ User Supir OK (tarjo@gmail.com)");
+  }
+
+  // 4. Data Berita (Sekarang admin.id bisa dibaca)
   const posts = [
     {
       title: 'Pengumuman Jadwal Baru Pengangkutan',
       slug: 'jadwal-baru-2026',
       content: 'Mulai Maret 2026, armada akan beroperasi mulai pukul 05.00 WIB...',
-      category: Category.PENGUMUMAN, // Gunakan Enum Category
+      category: Category.PENGUMUMAN, 
       isPublished: true,
       isFeatured: true,
-      authorId: admin.id,
+      authorId: admin.id, 
     },
     {
       title: 'Tips Memilah Sampah Organik di Rumah',
       slug: 'tips-pilah-sampah',
       content: 'Memilah sampah dari rumah membantu mempercepat proses pengolahan di TPA...',
-      category: Category.BERITA, // Gunakan Enum Category
+      category: Category.BERITA, 
       isPublished: true,
       isFeatured: false,
-      authorId: admin.id,
+      authorId: admin.id, 
     }
   ];
 
@@ -50,7 +86,7 @@ async function main() {
       update: {
         title: post.title,
         content: post.content,
-        category: post.category, // Sekarang TypeScript sudah tahu ini Enum
+        category: post.category,
         isPublished: post.isPublished,
         isFeatured: post.isFeatured,
         authorId: post.authorId,
@@ -64,7 +100,7 @@ async function main() {
 
 main()
   .catch((e) => {
-    console.error(e);
+    console.error("🔥 Error saat seeding:", e);
     process.exit(1);
   })
   .finally(async () => {

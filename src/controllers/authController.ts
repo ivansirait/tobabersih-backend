@@ -1,162 +1,97 @@
-import express from 'express';
 import type { Request, Response } from 'express';
-import { prisma } from '../config/db.js';
-import jwt from 'jsonwebtoken';
-import bcrypt from 'bcrypt';
+import { PrismaClient } from '@prisma/client';
+import * as bcrypt from 'bcrypt'; // Pastikan bcrypt di-import
 
+const prisma = new PrismaClient();
 
-export const login = async (req: Request, res: Response) => {
+export const login = async (req: Request, res: Response): Promise<any> => {
+  const { email, password } = req.body;
+
   try {
-    const { email, password } = req.body;
-    
-    console.log('Mencoba login untuk email:', email);
-
-    // Validasi input
-    if (!email || !password) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'Email dan password harus diisi' 
-      });
-    }
+    // 🔍 PELACAK: Cetak ke terminal siapa yang mencoba login
+    console.log(`\n➡️ Seseorang mencoba login dengan email: ${email}`);
 
     // Cari user di database
-    const user = await prisma.user.findUnique({
-      where: { email }
-    });
+    const user = await prisma.user.findUnique({ where: { email } });
 
     if (!user) {
-      console.log('User tidak ditemukan:', email);
-      return res.status(401).json({ 
-        success: false,
-        message: 'Email atau password salah' 
-      });
+      console.log("❌ GAGAL: Email tidak ditemukan di database.");
+      return res.status(401).json({ success: false, message: 'Email tidak terdaftar' });
     }
 
-    // Verifikasi password
-    // Jika password disimpan dalam bentuk hash
-    const isValidPassword = await bcrypt.compare(password, user.passwordHash);
-    
-    // Jika password masih plain text (untuk sementara)
-    // const isValidPassword = password === user.passwordHash;
+    // Cek password (Bisa teks biasa dari seeding, atau bcrypt dari register asli)
+    let isPasswordValid = false;
 
-    if (!isValidPassword) {
-      console.log('Password salah untuk:', email);
-      return res.status(401).json({ 
-        success: false,
-        message: 'Email atau password salah' 
-      });
+    // Jika password di database adalah hasil enkripsi bcrypt (biasanya diawali $2b$ atau $2a$)
+    if (user.passwordHash.startsWith('$2b$') || user.passwordHash.startsWith('$2a$')) {
+      isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+    } else {
+      // Jika password di database adalah teks biasa (contoh: "budi123")
+      isPasswordValid = (user.passwordHash === password);
     }
 
-    // Buat token JWT
-    const token = jwt.sign(
-      { 
-        id: user.id.toString(),
-        email: user.email,
-        role: user.role 
-      },
-      process.env.JWT_SECRET || 'rahasia-default',
-      { expiresIn: '1d' }
-    );
+    if (!isPasswordValid) {
+      console.log("❌ GAGAL: Password yang dimasukkan salah.");
+      return res.status(401).json({ success: false, message: 'Password salah' });
+    }
 
-    console.log('Login berhasil untuk:', email);
-    console.log('Token dibuat:', token.substring(0, 20) + '...');
+    console.log(`✅ BERHASIL: ${user.fullName} login sebagai ${user.role}`);
 
-    // Kirim response dengan token
-    res.json({
-      success: true,
-      message: 'Login berhasil',
-      token, // PASTIKAN INI ADA!
-      user: {
-        id: user.id.toString(),
-        email: user.email,
-        fullName: user.fullName,
-        role: user.role
-      }
+    // Tentukan role untuk dikirim ke Flutter / Next.js
+    let flutterRole = 'masyarakat'; // Default untuk WARGA
+    if (user.role === 'OPERATOR') flutterRole = 'supir';
+    if (user.role === 'ADMIN') flutterRole = 'admin';
+
+    return res.json({ 
+      success: true, 
+      role: flutterRole, 
+      data: { 
+        id: user.id.toString(), // Wajib toString agar tidak error BigInt
+        name: user.fullName,
+        email: user.email
+      } 
     });
 
-  } catch (error) {
-    console.error('Error saat login:', error);
-    res.status(500).json({ 
-      success: false,
-      message: 'Terjadi kesalahan server' 
-    });
+  } catch (error: any) {
+    console.error("🔥 ERROR SISTEM SAAT LOGIN:", error);
+    return res.status(500).json({ success: false, message: `Kesalahan server: ${error.message}` });
   }
 };
 
-// Tambahkan fungsi ini di authController.ts
+// Fungsi Register Khusus Warga (Masyarakat)
+export const register = async (req: Request, res: Response): Promise<any> => {
+  const { fullName, email, password } = req.body;
 
-export const register = async (req: Request, res: Response) => {
   try {
-    const { email, fullName, password, phoneNumber } = req.body;
-    
-    console.log('Mencoba register untuk email:', email);
-
-    // Validasi input
-    if (!email || !fullName || !password) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'Email, nama lengkap, dan password harus diisi' 
-      });
-    }
-
-    // Cek apakah email sudah terdaftar
-    const existingUser = await prisma.user.findUnique({
-      where: { email }
-    });
-
+    // 1. Cek apakah email sudah terpakai
+    const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'Email sudah terdaftar' 
-      });
+      return res.status(400).json({ success: false, message: 'Email sudah terdaftar, silakan gunakan email lain.' });
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // 2. Enkripsi Password demi keamanan
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Buat user baru dengan role WARGA
+    // 3. Simpan ke database dengan role WARGA
     const newUser = await prisma.user.create({
       data: {
-        email,
         fullName,
+        email,
         passwordHash: hashedPassword,
-        phoneNumber: phoneNumber || null,
         role: 'WARGA',
         isActive: true
       }
     });
 
-    // Buat token JWT
-    const token = jwt.sign(
-      { 
-        id: newUser.id.toString(),
-        email: newUser.email,
-        role: newUser.role,
-        fullName: newUser.fullName
-      },
-      process.env.JWT_SECRET || 'rahasia-default',
-      { expiresIn: '1d' }
-    );
-
-    console.log('Register berhasil untuk:', email);
-
-    res.status(201).json({
-      success: true,
-      message: 'Registrasi berhasil',
-      token,
-      user: {
-        id: newUser.id.toString(),
-        email: newUser.email,
-        fullName: newUser.fullName,
-        role: newUser.role
-      }
+    return res.status(201).json({ 
+      success: true, 
+      message: 'Registrasi berhasil! Silakan login.',
+      data: { id: newUser.id.toString(), name: newUser.fullName, email: newUser.email }
     });
 
-  } catch (error) {
-    console.error('Error saat register:', error);
-    res.status(500).json({ 
-      success: false,
-      message: 'Terjadi kesalahan server' 
-    });
+  } catch (error: any) {
+    console.error("🔥 ERROR SAAT REGISTER:", error);
+    return res.status(500).json({ success: false, message: `Kesalahan server: ${error.message}` });
   }
 };

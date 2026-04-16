@@ -1,66 +1,77 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL") // 🔥 TAMBAHKAN BARIS INI
+  extensions = [postgis(schema: "extensions"), uuid_ossp(map: "uuid-ossp", schema: "extensions")]
 }
 
 model User {
-  id            BigInt         @id @default(autoincrement())
-  email         String         @unique
-  passwordHash  String         @map("password_hash")
-  fullName      String         @map("full_name")
-  phoneNumber   String?        @map("phone_number")
-  role          Role           @default(WARGA)
-  createdAt     DateTime       @default(now()) @map("created_at")
-  updatedAt     DateTime       @default(now()) @map("updated_at")
-  isActive      Boolean        @default(true)
-  notifications Notification[]
-  posts         Post[]
-  reports       Report[]
-  trucks        Truck[]
-  volumes       Volume[]
+  id              BigInt         @id @default(autoincrement())
+  username        String?        @unique
+  email           String         @unique
+  passwordHash    String         @map("password_hash")
+  fullName        String         @map("full_name")
+  phoneNumber     String?        @map("phone_number")
+  role            Role           @default(WARGA)
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @default(now()) @map("updated_at")
+  isActive        Boolean        @default(true)
+  notifications   Notification[]
+  posts           Post[]
+  reports         Report[]
+  assigned        Task[]         @relation("TaskAssigner")
+  tasks           Task[]         @relation("TaskDriver")
+  trucks          Truck[]
+  volumes         Volume[]
 
   @@map("users")
 }
 
 model Location {
-  id             BigInt                    @id @default(autoincrement())
-  name           String
-  locationType   String                    @map("location_type")
-  latitude       Decimal                   @db.Decimal(10, 8)
-  longitude      Decimal                   @db.Decimal(11, 8)
-  geom           Unsupported("geography")?
-  address        String?
-  capacityVolume Int?                      @map("capacity_volume")
-  createdAt      DateTime                  @default(now()) @map("created_at")
-  updatedAt      DateTime                  @default(now()) @map("updated_at")
-  reports        Report[]
-  routesStart    Route[]                   @relation("StartLocation")
+  id              BigInt         @id @default(autoincrement())
+  name            String
+  locationType    String         @map("location_type")
+  isActive        Boolean        @default(true) @map("is_active")
+  code            String?        @unique
+  population      Int?
+  latitude        Decimal        @db.Decimal(10, 8)
+  radius          Int?
+  longitude       Decimal        @db.Decimal(11, 8)
+  geom            Unsupported("geography")?
+  address         String?
+  capacityVolume  Int?           @map("capacity_volume")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @default(now()) @map("updated_at")
+  reports         Report[]
+  routesStart     Route[]        @relation("StartLocation")
 
   @@map("locations")
 }
 
 model Report {
-  id            BigInt                    @id @default(autoincrement())
-  userId        BigInt                    @map("user_id")
-  locationId    BigInt?                   @map("location_id")
-  latitude      Decimal                   @db.Decimal(10, 8)
-  longitude     Decimal                   @db.Decimal(11, 8)
+  id            BigInt         @id @default(autoincrement())
+  userId        BigInt         @map("user_id")
+  jenisSampah   WasteType?     @map("jenis_sampah")
+  locationId    BigInt?        @map("location_id")
+  latitude      Decimal        @db.Decimal(10, 8)
+  longitude     Decimal        @db.Decimal(11, 8)
   geom          Unsupported("geography")?
-  photoUrl      String?                   @map("photo_url")
+  photoUrl      String?        @map("photo_url")
   description   String?
-  latCompleted  Decimal?                  @map("lat_completed") @db.Decimal(10, 8)
-  longCompleted Decimal?                  @map("long_completed") @db.Decimal(11, 8)
-  photoAfterUrl String?                   @map("photo_after_url")
-  status        ReportStatus              @default(PENDING)
-  createdAt     DateTime                  @default(now()) @map("created_at")
-  updatedAt     DateTime                  @default(now()) @map("updated_at")
-  jenisSampah   String?                   @map("jenis_sampah")
-  location      Location?                 @relation(fields: [locationId], references: [id])
-  user          User                      @relation(fields: [userId], references: [id])
+  latCompleted  Decimal?       @map("lat_completed") @db.Decimal(10, 8)
+  longCompleted Decimal?       @map("long_completed") @db.Decimal(11, 8)
+  photoAfterUrl String?        @map("photo_after_url")
+  status        ReportStatus   @default(PENDING)
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @default(now()) @map("updated_at")
+  location      Location?      @relation(fields: [locationId], references: [id])
+  user          User           @relation(fields: [userId], references: [id])
+  task          Task?
   volumes       Volume[]
 
   @@map("reports")
@@ -73,11 +84,13 @@ model Truck {
   currentLat      Decimal?          @map("current_lat") @db.Decimal(10, 8)
   currentLong     Decimal?          @map("current_long") @db.Decimal(11, 8)
   lastPing        DateTime?         @map("last_ping")
+  lastLocation    String?           @map("last_location")
   createdAt       DateTime          @default(now()) @map("created_at")
   updatedAt       DateTime          @default(now()) @map("updated_at")
   status          TruckStatus       @default(AVAILABLE)
   locationHistory LocationHistory[]
   routes          Route[]
+  tasks           Task[]
   operator        User?             @relation(fields: [operatorId], references: [id])
 
   @@map("trucks")
@@ -147,27 +160,15 @@ model Document {
   @@map("documents")
 }
 
-model GalleryAlbum {
-  id          Int            @id @default(autoincrement())
-  title       String
+model Gallery {
+  id          Int      @id @default(autoincrement())
+  title       String?
+  imageUrl    String   @map("image_url")
+  isSlider    Boolean  @default(false) @map("is_slider")
+  createdAt   DateTime @default(now()) @map("created_at")
   description String?
-  coverUrl    String?        @map("cover_url")
-  createdAt   DateTime       @default(now()) @map("created_at")
-  updatedAt   DateTime       @updatedAt @map("updated_at")
-  photos      GalleryPhoto[]
 
-  @@map("gallery_albums")
-}
-
-model GalleryPhoto {
-  id        Int          @id @default(autoincrement())
-  albumId   Int          @map("album_id")
-  imageUrl  String       @map("image_url")
-  caption   String?
-  createdAt DateTime     @default(now()) @map("created_at")
-  album     GalleryAlbum @relation(fields: [albumId], references: [id])
-
-  @@map("gallery_photos")
+  @@map("galleries")
 }
 
 model Notification {
@@ -180,6 +181,51 @@ model Notification {
   user      User     @relation(fields: [userId], references: [id])
 
   @@map("notifications")
+}
+
+model Task {
+  id          BigInt     @id @default(autoincrement())
+  taskNumber  String     @unique @map("task_number")
+  type        String
+  status      TaskStatus @default(DITUGASKAN)
+  driverId    BigInt     @map("driver_id")
+  truckId     BigInt?    @map("truck_id")
+  
+  // 🔥 PERBAIKAN: Dibuat opsional (?) karena Admin tidak selalu mengirim data ini saat buat jadwal
+  assignerId  BigInt?    @map("assigner_id") 
+  reportId    BigInt?    @unique @map("report_id")
+  location    String
+  latitude    Decimal?   @db.Decimal(10, 8) 
+  longitude   Decimal?   @db.Decimal(11, 8) 
+  district    String?    
+  description String?
+  notes       String?    @db.Text // 🔥 TAMBAHAN: Untuk menyimpan instruksi khusus dari Admin
+  
+  scheduledAt DateTime   @map("scheduled_at")
+  startedAt   DateTime?  @map("started_at")
+  completedAt DateTime?  @map("completed_at")
+  volumeKg    Decimal?   @map("volume_kg") @db.Decimal(10, 2)
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+  
+  photos      TaskPhoto[]
+  assigner    User?      @relation("TaskAssigner", fields: [assignerId], references: [id]) // Dibuat opsional
+  driver      User       @relation("TaskDriver", fields: [driverId], references: [id])
+  report      Report?    @relation(fields: [reportId], references: [id])
+  truck       Truck?     @relation(fields: [truckId], references: [id])
+
+  @@map("tasks")
+}
+
+model TaskPhoto {
+  id        BigInt   @id @default(autoincrement())
+  taskId    BigInt   @map("task_id")
+  photoUrl  String   @map("photo_url")
+  type      String
+  createdAt DateTime @default(now()) @map("created_at")
+  task      Task     @relation(fields: [taskId], references: [id])
+
+  @@map("task_photos")
 }
 
 enum Role {
@@ -204,4 +250,20 @@ enum Category {
   BERITA
   PENGUMUMAN
   PROFIL_DLH
+}
+
+enum WasteType {
+  ORGANIK
+  ANORGANIK
+  B3
+  CAMPURAN
+}
+
+enum TaskStatus {
+  DITUGASKAN
+  DITERIMA
+  DALAM_PERJALANAN
+  TIBA
+  BEKERJA
+  SELESAI
 }

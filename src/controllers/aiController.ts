@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import axios from 'axios';
 
 export const getWastePrediction = async (req: Request, res: Response) => {
