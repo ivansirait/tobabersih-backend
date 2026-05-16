@@ -1,3 +1,4 @@
+// galleryRoute.ts
 import { Router } from 'express';
 import {
   getAlbums,
@@ -11,11 +12,14 @@ import {
 
 const router = Router();
 
+// Jalur URL disesuaikan agar bersih dan RESTful
 router.get('/albums', getAlbums);
 router.get('/albums/:id', getAlbumById);
 router.post('/albums', createAlbum);
 router.put('/albums/:id', updateAlbum);
 router.delete('/albums/:id', deleteAlbum);
+
+// Parameter dinamis menggunakan :albumId dan :photoId agar sinkron dengan controller
 router.post('/albums/:albumId/photos', addPhoto);
 router.delete('/photos/:photoId', deletePhoto);
 

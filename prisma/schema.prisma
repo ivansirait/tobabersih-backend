@@ -231,7 +231,7 @@ model Task {
   notes       String?
   photos      TaskPhoto[]
   assigner    User?       @relation("TaskAssigner", fields: [assignerId], references: [id])
-  driver      User        @relation("TaskDriver", fields: [driverId], references: [id])
+  driver      User?       @relation("TaskDriver", fields: [driverId], references: [id])
   report      Report?     @relation(fields: [reportId], references: [id])
   truck       Truck?      @relation(fields: [truckId], references: [id])
 
@@ -249,23 +249,44 @@ model TaskPhoto {
   @@map("task_photos")
 }
 
-model gallery_albums {
-  id             Int              @id(map: "GalleryAlbum_pkey") @default(autoincrement())
-  title          String
-  description    String?
-  cover_url      String?
-  created_at     DateTime         @default(now())
-  updated_at     DateTime
-  gallery_photos gallery_photos[]
+model GalleryAlbum {
+  id          Int            @id @default(autoincrement())
+  title       String
+  description String?
+  coverUrl    String?        @map("cover_url")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  photos      GalleryPhoto[]
+
+  @@map("gallery_albums")
 }
 
-model gallery_photos {
-  id             Int            @id(map: "GalleryPhoto_pkey") @default(autoincrement())
-  album_id       Int
-  image_url      String
-  caption        String?
-  created_at     DateTime       @default(now())
-  gallery_albums gallery_albums @relation(fields: [album_id], references: [id], onDelete: Cascade, map: "GalleryPhoto_album_id_fkey")
+model GalleryPhoto {
+  id        Int          @id @default(autoincrement())
+  albumId   Int          @map("album_id")
+  imageUrl  String       @map("image_url")
+  caption   String?
+  createdAt DateTime     @default(now()) @map("created_at")
+  album     GalleryAlbum @relation(fields: [albumId], references: [id], onDelete: Cascade)
+
+  @@map("gallery_photos")
+}
+
+model Edukasi {
+  id          Int       @id @default(autoincrement())
+  judul       String
+  deskripsi   String?
+  mediaUrl    String   @map("media_url")
+  mediaType   MediaType @map("media_type")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("edukasi")
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
 }
 
 enum Role {

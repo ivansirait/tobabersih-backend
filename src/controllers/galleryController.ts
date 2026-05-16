@@ -1,14 +1,26 @@
+// galleryController.ts
 import type { Request, Response } from 'express';
 import { prisma } from '../config/db.js';
 
-// GET semua album
-export const getAlbums = async (req: Request, res: Response) => {
+// NOTE: Prisma client yang ter-generate di project ini hanya mengekspose enum ScalarField,
+// jadi untuk relasi/baca/tulis data gallery sebaiknya gunakan model yang sudah tersedia.
+// Berdasarkan schema.prisma, modelnya adalah GalleryAlbum dan GalleryPhoto.
+
+export const getAlbums = async (_req: Request, res: Response) => {
   try {
-    const albums = await prisma.gallery_albums.findMany({
-      orderBy: { created_at: 'desc' },
+    // fallback: gunakan model dari Prisma jika tersedia
+    const modelAlbum: any = (prisma as any).galleryAlbum ?? (prisma as any).gallery_albums;
+    const modelPhoto: any = (prisma as any).galleryPhoto ?? (prisma as any).gallery_photos;
+
+    if (!modelAlbum || !modelPhoto) {
+      return res.status(500).json({ message: 'Prisma model gallery tidak tersedia' });
+    }
+
+    const albums = await modelAlbum.findMany({
+      orderBy: { createdAt: 'desc' },
       include: {
-        gallery_photos: {
-          orderBy: { created_at: 'asc' },
+        photos: {
+          orderBy: { createdAt: 'asc' },
         },
       },
     });
@@ -20,22 +32,24 @@ export const getAlbums = async (req: Request, res: Response) => {
   }
 };
 
-// GET album by ID
 export const getAlbumById = async (req: Request<{ id: string }>, res: Response) => {
   try {
-    const album = await prisma.gallery_albums.findUnique({
-      where: { id: parseInt(req.params.id) },
+    const albumId = parseInt(req.params.id, 10);
+    if (Number.isNaN(albumId)) return res.status(400).json({ message: 'ID tidak valid' });
+
+    const modelAlbum: any = (prisma as any).galleryAlbum ?? (prisma as any).gallery_albums;
+    if (!modelAlbum) return res.status(500).json({ message: 'Prisma model galleryAlbum tidak tersedia' });
+
+    const album = await modelAlbum.findUnique({
+      where: { id: albumId },
       include: {
-        gallery_photos: {
-          orderBy: { created_at: 'asc' },
+        photos: {
+          orderBy: { createdAt: 'asc' },
         },
       },
     });
 
-    if (!album) {
-      return res.status(404).json({ message: 'Album tidak ditemukan' });
-    }
-
+    if (!album) return res.status(404).json({ message: 'Album tidak ditemukan' });
     res.json(album);
   } catch (error) {
     console.error('Error getAlbumById:', error);
@@ -43,25 +57,26 @@ export const getAlbumById = async (req: Request<{ id: string }>, res: Response) 
   }
 };
 
-// CREATE album
 export const createAlbum = async (req: Request, res: Response) => {
   try {
-    const { title, description, coverUrl } = req.body;
+    const { title, description, coverUrl } = req.body as {
+      title?: string;
+      description?: string;
+      coverUrl?: string;
+    };
 
-    if (!title) {
-      return res.status(400).json({ message: 'Judul album wajib diisi' });
-    }
+    if (!title) return res.status(400).json({ message: 'Judul album wajib diisi' });
 
-    const album = await prisma.gallery_albums.create({
+    const modelAlbum: any = (prisma as any).galleryAlbum ?? (prisma as any).gallery_albums;
+    if (!modelAlbum) return res.status(500).json({ message: 'Prisma model galleryAlbum tidak tersedia' });
+
+    const album = await modelAlbum.create({
       data: {
         title,
         description: description || null,
-        cover_url: coverUrl || null,
-        updated_at: new Date(),
+        coverUrl: coverUrl || null,
       },
-      include: {
-        gallery_photos: true,
-      },
+      include: { photos: true },
     });
 
     res.status(201).json(album);
@@ -71,22 +86,28 @@ export const createAlbum = async (req: Request, res: Response) => {
   }
 };
 
-// UPDATE album
 export const updateAlbum = async (req: Request<{ id: string }>, res: Response) => {
   try {
-    const { title, description, coverUrl } = req.body;
+    const albumId = parseInt(req.params.id, 10);
+    if (Number.isNaN(albumId)) return res.status(400).json({ message: 'ID tidak valid' });
 
-    const album = await prisma.gallery_albums.update({
-      where: { id: parseInt(req.params.id) },
+    const { title, description, coverUrl } = req.body as {
+      title?: string;
+      description?: string;
+      coverUrl?: string;
+    };
+
+    const modelAlbum: any = (prisma as any).galleryAlbum ?? (prisma as any).gallery_albums;
+    if (!modelAlbum) return res.status(500).json({ message: 'Prisma model galleryAlbum tidak tersedia' });
+
+    const album = await modelAlbum.update({
+      where: { id: albumId },
       data: {
-        title,
+        title: title ?? undefined,
         description: description || null,
-        cover_url: coverUrl || null,
-        updated_at: new Date(),
+        coverUrl: coverUrl || null,
       },
-      include: {
-        gallery_photos: true,
-      },
+      include: { photos: true },
     });
 
     res.json(album);
@@ -96,18 +117,20 @@ export const updateAlbum = async (req: Request<{ id: string }>, res: Response) =
   }
 };
 
-// DELETE album
 export const deleteAlbum = async (req: Request<{ id: string }>, res: Response) => {
   try {
-    const id = parseInt(req.params.id);
+    const albumId = parseInt(req.params.id, 10);
+    if (Number.isNaN(albumId)) return res.status(400).json({ message: 'ID tidak valid' });
 
-    await prisma.gallery_photos.deleteMany({
-      where: { album_id: id },
-    });
+    const modelAlbum: any = (prisma as any).galleryAlbum ?? (prisma as any).gallery_albums;
+    const modelPhoto: any = (prisma as any).galleryPhoto ?? (prisma as any).gallery_photos;
 
-    await prisma.gallery_albums.delete({
-      where: { id },
-    });
+    if (!modelAlbum || !modelPhoto) {
+      return res.status(500).json({ message: 'Prisma model gallery tidak tersedia' });
+    }
+
+    await modelPhoto.deleteMany({ where: { albumId } });
+    await modelAlbum.delete({ where: { id: albumId } });
 
     res.json({ message: 'Album berhasil dihapus' });
   } catch (error) {
@@ -116,28 +139,32 @@ export const deleteAlbum = async (req: Request<{ id: string }>, res: Response) =
   }
 };
 
-// ADD photo
 export const addPhoto = async (req: Request<{ albumId: string }>, res: Response) => {
   try {
-    const albumId = parseInt(req.params.albumId);
-    const { imageUrl, caption } = req.body;
+    const albumId = parseInt(req.params.albumId, 10);
+    if (Number.isNaN(albumId)) return res.status(400).json({ message: 'ID Album tidak valid' });
 
-    if (!imageUrl) {
-      return res.status(400).json({ message: 'imageUrl wajib diisi' });
+    const { imageUrl, caption } = req.body as {
+      imageUrl?: string;
+      caption?: string;
+    };
+
+    if (!imageUrl) return res.status(400).json({ message: 'imageUrl wajib diisi' });
+
+    const modelAlbum: any = (prisma as any).galleryAlbum ?? (prisma as any).gallery_albums;
+    const modelPhoto: any = (prisma as any).galleryPhoto ?? (prisma as any).gallery_photos;
+
+    if (!modelAlbum || !modelPhoto) {
+      return res.status(500).json({ message: 'Prisma model gallery tidak tersedia' });
     }
 
-    const album = await prisma.gallery_albums.findUnique({
-      where: { id: albumId },
-    });
+    const album = await modelAlbum.findUnique({ where: { id: albumId } });
+    if (!album) return res.status(404).json({ message: 'Album tidak ditemukan' });
 
-    if (!album) {
-      return res.status(404).json({ message: 'Album tidak ditemukan' });
-    }
-
-    const photo = await prisma.gallery_photos.create({
+    const photo = await modelPhoto.create({
       data: {
-        album_id: albumId,
-        image_url: imageUrl,
+        albumId,
+        imageUrl,
         caption: caption || null,
       },
     });
@@ -149,16 +176,19 @@ export const addPhoto = async (req: Request<{ albumId: string }>, res: Response)
   }
 };
 
-// DELETE photo
 export const deletePhoto = async (req: Request<{ photoId: string }>, res: Response) => {
   try {
-    await prisma.gallery_photos.delete({
-      where: { id: parseInt(req.params.photoId) },
-    });
+    const photoId = parseInt(req.params.photoId, 10);
+    if (Number.isNaN(photoId)) return res.status(400).json({ message: 'ID Foto tidak valid' });
 
+    const modelPhoto: any = (prisma as any).galleryPhoto ?? (prisma as any).gallery_photos;
+    if (!modelPhoto) return res.status(500).json({ message: 'Prisma model galleryPhoto tidak tersedia' });
+
+    await modelPhoto.delete({ where: { id: photoId } });
     res.json({ message: 'Foto berhasil dihapus' });
   } catch (error) {
     console.error('Error deletePhoto:', error);
     res.status(500).json({ message: 'Gagal menghapus foto' });
   }
 };
+

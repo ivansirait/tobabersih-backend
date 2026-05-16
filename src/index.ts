@@ -18,6 +18,9 @@ import dashboardRoutes from './routes/dashboardRoutes.js';
 import postsRoutes from './routes/postRoutes.js';
 import routeRoutes from './routes/Routeroutes.js';
 import akunmanager from './routes/akunmasyarakatRoutes.js';
+import wilayahRoutes from './routes/wilayahRoutes.js';
+import galleryRoutes from './routes/galleryRoutes.js';
+import edukasiRoutes from './routes/edukasiRoutes.js';
 import { sendEmail } from "./utils/sendEmail.js";
 dotenv.config();
 
@@ -66,6 +69,10 @@ app.use('/api/penugasan', penugasanRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/posts', postsRoutes);
 app.use('/api/rute', routeRoutes);
+app.use('/api/users', akunmanager);
+app.use('/api/wilayah', wilayahRoutes);
+app.use('/api/galleries', galleryRoutes);
+app.use('/api/edukasi', edukasiRoutes);
 
 (BigInt.prototype as any).toJSON = function () { return this.toString(); };
 
