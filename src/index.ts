@@ -19,7 +19,6 @@ import postsRoutes from './routes/postRoutes.js';
 import routeRoutes from './routes/Routeroutes.js';
 import usersRoutes from './routes/usersRoutes.js';
 import akunmanager from './routes/akunmasyarakatRoutes.js';
-import wilayahRoutes from './routes/wilayahRoutes.js';
 import galleryRoutes from './routes/galleryRoutes.js';
 import edukasiRoutes from './routes/edukasiRoutes.js';
 import { sendEmail } from "./utils/sendEmail.js";
@@ -74,6 +73,12 @@ app.use('/api/penugasan', penugasanRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/posts', postsRoutes);
 app.use('/api/rute', routeRoutes);
+app.use('/api/wilayah', wilayahRoutes);
+app.use('/api/users', usersRoutes);
+app.use('/api/akun-masyarakat', akunmanager);
+app.use('/api/gallery', galleryRoutes);
+app.use('/api/edukasi', edukasiRoutes);
+app.use('/api/kabid', kabidRoutes);
 
 (BigInt.prototype as any).toJSON = function () { return this.toString(); };
 
@@ -105,8 +110,9 @@ const seedAdmin = async () => {
   }
 };
 
-// Jalankan seed hanya jika database terhubung
-if (process.env.NODE_ENV !== 'test') {
+// Jalankan seed hanya jika diminta (hindari gagal startup saat DB belum tersedia)
+// set SEED_ADMIN=true di .env untuk mengaktifkan
+if (process.env.SEED_ADMIN === 'true') {
   seedAdmin();
 }
 
