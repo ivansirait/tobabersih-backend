@@ -17,7 +17,6 @@ import penugasanRoutes from './routes/penugasanRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
 import postsRoutes from './routes/postRoutes.js';
 import routeRoutes from './routes/Routeroutes.js';
-import wilayahRoutes from './routes/wilayahRoutes.js';
 import usersRoutes from './routes/usersRoutes.js';
 import akunmanager from './routes/akunmasyarakatRoutes.js';
 import wilayahRoutes from './routes/wilayahRoutes.js';
