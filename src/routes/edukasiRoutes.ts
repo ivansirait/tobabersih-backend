@@ -10,16 +10,13 @@ import {
 
 const router = Router();
 
-// Konsisten mengikuti logika fitur admin lain: edukasi hanya bisa dimanajemen oleh ADMIN
-router.use(authenticateToken);
-router.use(authorizeRole(['ADMIN']));
-
+// ✅ GET = publik (tanpa auth)
 router.get('/', getEdukasi);
 router.get('/:id', getEdukasiById);
-router.post('/', createEdukasi);
-router.put('/:id', updateEdukasi);
-router.delete('/:id', deleteEdukasi);
+
+// ✅ Write operations = ADMIN only
+router.post('/', authenticateToken, authorizeRole(['ADMIN']), createEdukasi);
+router.put('/:id', authenticateToken, authorizeRole(['ADMIN']), updateEdukasi);
+router.delete('/:id', authenticateToken, authorizeRole(['ADMIN']), deleteEdukasi);
 
 export default router;
-
-

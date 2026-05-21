@@ -23,6 +23,7 @@ import galleryRoutes from './routes/galleryRoutes.js';
 import edukasiRoutes from './routes/edukasiRoutes.js';
 import { sendEmail } from "./utils/sendEmail.js";
 import kabidRoutes from './routes/kabidRoutes.js';
+import wilayahRoutes from './routes/wilayahRoutes.js';
 dotenv.config();
 
 const app = express();
@@ -76,9 +77,10 @@ app.use('/api/rute', routeRoutes);
 app.use('/api/wilayah', wilayahRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/akun-masyarakat', akunmanager);
-app.use('/api/gallery', galleryRoutes);
+app.use('/api/galleries', galleryRoutes);
 app.use('/api/edukasi', edukasiRoutes);
 app.use('/api/kabid', kabidRoutes);
+
 
 (BigInt.prototype as any).toJSON = function () { return this.toString(); };
 
@@ -140,7 +142,7 @@ server.listen(PORT, () => {
 process.on("SIGTERM", async () => {
   await prisma.$disconnect();
   server.close(() => process.exit(0));
-});
+}); 
 
 app.get("/test-email", async (req, res) => {
   await sendEmail(
