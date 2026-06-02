@@ -6,4 +6,4 @@ const router = Router();
 router.post('/aduan', createAduan);
 router.get('/', getSemuaPenugasan);
 
-export default router;
+export default router   ;
