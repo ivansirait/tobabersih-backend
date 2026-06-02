@@ -15,7 +15,7 @@ import uploadRoutes from './routes/uploadRoutes.js';
 import driverRoutes from './routes/driverRoutes.js';
 import penugasanRoutes from './routes/penugasanRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
-import postsRoutes from './routes/postRoutes.js';
+import postsRoutes from './routes/beritaRoutes.js';
 import routeRoutes from './routes/Routeroutes.js';
 import usersRoutes from './routes/usersRoutes.js';
 import akunmanager from './routes/akunmasyarakatRoutes.js';
@@ -24,6 +24,7 @@ import edukasiRoutes from './routes/edukasiRoutes.js';
 import { sendEmail } from "./utils/sendEmail.js";
 import kabidRoutes from './routes/kabidRoutes.js';
 import wilayahRoutes from './routes/wilayahRoutes.js';
+import trackingRoutes from './routes/trackingRoutes.js';
 dotenv.config();
 
 const app = express();
@@ -72,15 +73,15 @@ app.use('/api/driver', driverRoutes);
 app.use('/api/laporan', laporanRoutes);
 app.use('/api/penugasan', penugasanRoutes);
 app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/posts', postsRoutes);
 app.use('/api/rute', routeRoutes);
+app.use('/api/posts', postsRoutes);
 app.use('/api/wilayah', wilayahRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/akun-masyarakat', akunmanager);
 app.use('/api/galleries', galleryRoutes);
 app.use('/api/edukasi', edukasiRoutes);
 app.use('/api/kabid', kabidRoutes);
-
+app.use('/api/tracking', trackingRoutes);
 
 (BigInt.prototype as any).toJSON = function () { return this.toString(); };
 

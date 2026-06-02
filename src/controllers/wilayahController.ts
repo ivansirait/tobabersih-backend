@@ -115,22 +115,17 @@ export const getWilayahById = async (req: Request, res: Response) => {
 const generateNameFromAddress = (address: string): string => {
   if (!address) return 'Wilayah Tidak Diketahui';
 
-  // Extract district/area from address
   const addressParts = address.split(',');
-  // Get the first part (usually the specific location)
   const firstPart = addressParts[0]?.trim();
 
-  // If contains village/district names
   const keywords = ['kecamatan', 'kelurahan', 'desa', 'kota', 'camatan'];
   for (const keyword of keywords) {
     const index = firstPart.toLowerCase().indexOf(keyword);
     if (index !== -1) {
-      // Return part after the keyword
       return firstPart.substring(index + keyword.length).trim();
     }
   }
 
-  // Return first part or first village name found
   const villageMatch = firstPart.match(/(kelurahan|desa)\s+([^\d\s]+)/i);
   if (villageMatch) {
     return villageMatch[2].trim();
@@ -146,7 +141,6 @@ export const createWilayah = async (req: Request, res: Response) => {
       capacityVolume, latitude, longitude, isActive, radius
     } = req.body;
 
-    // Generate name if not provided
     let finalName = name;
     if (!finalName && address) {
       finalName = generateNameFromAddress(address);
@@ -341,5 +335,41 @@ export const getAllPolygons = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error fetching polygons:', error);
     res.status(500).json({ error: 'Gagal mengambil data polygon' });
+  }
+};
+
+// 🔥 TAMBAHKAN: Endpoint validasi data wilayah
+export const validateWilayahData = async (req: Request, res: Response) => {
+  try {
+    const wilayah = await prisma.location.findMany({
+      where: { locationType: 'KECAMATAN' }
+    });
+    
+    const validationResults = wilayah.map(w => ({
+      id: w.id.toString(),
+      name: w.name,
+      isValid: w.latitude !== 0 && w.longitude !== 0 && (w.radius || 0) > 0,
+      latitude: w.latitude,
+      longitude: w.longitude,
+      radius: w.radius,
+      issues: [
+        w.latitude === 0 ? 'Latitude 0' : null,
+        w.longitude === 0 ? 'Longitude 0' : null,
+        !w.radius || w.radius < 1000 ? 'Radius terlalu kecil' : null
+      ].filter(Boolean)
+    }));
+    
+    res.json({
+      success: true,
+      total: wilayah.length,
+      valid: validationResults.filter(v => v.isValid).length,
+      invalid: validationResults.filter(v => !v.isValid).length,
+      data: validationResults
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 };

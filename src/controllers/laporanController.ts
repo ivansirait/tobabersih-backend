@@ -2,34 +2,44 @@ import type { Request, Response } from 'express';
 import { prisma, supabase } from '../config/db.js';
 import { sendEmail } from '../utils/sendEmail.js'; 
 
-
-// GET /api/laporan (Untuk ditampilkan di Web Admin)
 export const getLaporan = async (req: Request, res: Response): Promise<any> => {
   try {
     const data = await prisma.report.findMany({
-      orderBy: { createdAt: 'desc' },
+      orderBy: {
+        createdAt: "desc",
+      },
       include: {
-        user: { select: { fullName: true, phoneNumber: true } }, 
-        location: true
-      }
+        user: {
+          select: {
+            fullName: true,
+            phoneNumber: true,
+          },
+        },
+        location: true,
+      },
     });
-    return res.json({ success: true, data });
+
+    console.log(`✅ Berhasil fetch ${data.length} laporan`);
+
+    return res.json({
+      success: true,
+      total: data.length,
+      data,
+    });
   } catch (error: any) {
     console.error("❌ ERROR GET LAPORAN:", error.message);
     console.error("Error Code:", error.code);
     console.error("Full Error:", error);
-    return res.status(500).json({ 
-      success: false, 
-      message: "Gagal ambil data", 
+
+    return res.status(500).json({
+      success: false,
+      message: "Gagal ambil data",
       detail: error.message,
-      code: error.code 
+      code: error.code,
     });
   }
 };
 
-// POST /api/laporan/create (Untuk Warga Kirim Laporan dari Mobile)
-// POST /api/laporan/create
-// POST /api/laporan/create (Untuk Warga Kirim Laporan dari Mobile)
 export const createLaporan = async (req: Request, res: Response): Promise<any> => {
   // 🆕 TAMBAHAN: Destructure email dan pelapor
   const { userId, description, deskripsi, latitude, longitude, jenisSampah, photoUrl: bodyPhotoUrl, email, pelapor } = req.body;
