@@ -3,7 +3,6 @@ import { prisma } from '../config/db.js';
 
 const HARI_VALID = ['SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT', 'SABTU', 'MINGGU'];
 
-// ─── Helper: nama hari Indonesia dari Date ───────────────────
 function getNamaHari(date: Date): string {
   const map: Record<number, string> = {
     0: 'MINGGU', 1: 'SENIN', 2: 'SELASA', 3: 'RABU',
@@ -12,7 +11,6 @@ function getNamaHari(date: Date): string {
   return map[date.getDay()];
 }
 
-// ─── Helper: hitung jarak Haversine (km) ────────────────────
 function hitungJarak(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -25,7 +23,6 @@ function hitungJarak(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// ─── Helper: ambil rute jadwal dari DB berdasar trukId + hari ─
 async function getRuteDariDB(truckId: bigint, hari: string) {
   try {
     const rute = await prisma.routeTemplate.findFirst({
@@ -49,7 +46,7 @@ async function getRuteDariDB(truckId: bigint, hari: string) {
 }
 
 // ============================================================
-// GET: Semua rute template (bisa filter by truckId / hari)
+// GET: Semua rute template
 // ============================================================
 export const getSemuaRute = async (req: Request, res: Response): Promise<any> => {
   try {
@@ -96,7 +93,7 @@ export const getDetailRute = async (req: Request, res: Response): Promise<any> =
     const { ruteId } = req.params;
 
     const rute = await prisma.routeTemplate.findUnique({
-      where: { id: BigInt(ruteId) },
+      where: { id: BigInt(ruteId as string) },  // ✅ Fix
       include: {
         truck: { select: { id: true, plateNumber: true } },
         waypoints: { orderBy: { order: 'asc' } }
@@ -127,7 +124,7 @@ export const getDetailRute = async (req: Request, res: Response): Promise<any> =
 };
 
 // ============================================================
-// POST: Buat rute template baru (tanpa waypoint dulu)
+// POST: Buat rute template baru
 // ============================================================
 export const buatRute = async (req: Request, res: Response): Promise<any> => {
   try {
@@ -148,13 +145,13 @@ export const buatRute = async (req: Request, res: Response): Promise<any> => {
       });
     }
 
-    const truk = await prisma.truck.findUnique({ where: { id: BigInt(truckId) } });
+    const truk = await prisma.truck.findUnique({ where: { id: BigInt(truckId as string) } });  // ✅ Fix
     if (!truk) {
       return res.status(404).json({ success: false, message: 'Truk tidak ditemukan' });
     }
 
     const existing = await prisma.routeTemplate.findFirst({
-      where: { truckId: BigInt(truckId), dayOfWeek: hariUpper }
+      where: { truckId: BigInt(truckId as string), dayOfWeek: hariUpper }  // ✅ Fix
     });
     if (existing) {
       return res.status(400).json({
@@ -165,7 +162,7 @@ export const buatRute = async (req: Request, res: Response): Promise<any> => {
 
     const rute = await prisma.routeTemplate.create({
       data: {
-        truckId:   BigInt(truckId),
+        truckId:   BigInt(truckId as string),  // ✅ Fix
         dayOfWeek: hariUpper,
         name,
         isActive:  isActive !== undefined ? Boolean(isActive) : true,
@@ -196,8 +193,7 @@ export const buatRute = async (req: Request, res: Response): Promise<any> => {
 };
 
 // ============================================================
-// PUT: Update info rute (nama, truk, hari, aktif/nonaktif)
-// ✅ GABUNGAN: sekarang bisa update truckId dan dayOfWeek juga (dari teman)
+// PUT: Update info rute
 // ============================================================
 export const updateRute = async (req: Request, res: Response): Promise<any> => {
   try {
@@ -205,13 +201,12 @@ export const updateRute = async (req: Request, res: Response): Promise<any> => {
     const { name, isActive, truckId, dayOfWeek } = req.body;
 
     const existing = await prisma.routeTemplate.findUnique({
-      where: { id: BigInt(ruteId) },
+      where: { id: BigInt(ruteId as string) },  // ✅ Fix
     });
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Rute tidak ditemukan' });
     }
 
-    // Validasi dayOfWeek kalau dikirim
     if (dayOfWeek) {
       const hariUpper = (dayOfWeek as string).toUpperCase();
       if (!HARI_VALID.includes(hariUpper)) {
@@ -222,11 +217,9 @@ export const updateRute = async (req: Request, res: Response): Promise<any> => {
       }
     }
 
-    // Resolusi nilai akhir truckId dan dayOfWeek
-    const newTruckId   = truckId   ? BigInt(truckId)                       : existing.truckId;
-    const newDayOfWeek = dayOfWeek ? (dayOfWeek as string).toUpperCase()   : existing.dayOfWeek;
+    const newTruckId   = truckId   ? BigInt(truckId as string)                   : existing.truckId;  // ✅ Fix
+    const newDayOfWeek = dayOfWeek ? (dayOfWeek as string).toUpperCase()          : existing.dayOfWeek;
 
-    // Cek duplikat kombinasi truk+hari jika salah satu berubah
     if (
       newTruckId.toString() !== existing.truckId.toString() ||
       newDayOfWeek !== existing.dayOfWeek
@@ -235,7 +228,7 @@ export const updateRute = async (req: Request, res: Response): Promise<any> => {
         where: {
           truckId:   newTruckId,
           dayOfWeek: newDayOfWeek,
-          id:        { not: BigInt(ruteId) }, // exclude rute yang sedang diedit
+          id:        { not: BigInt(ruteId as string) },  // ✅ Fix
         },
       });
       if (duplikat) {
@@ -247,7 +240,7 @@ export const updateRute = async (req: Request, res: Response): Promise<any> => {
     }
 
     const updated = await prisma.routeTemplate.update({
-      where: { id: BigInt(ruteId) },
+      where: { id: BigInt(ruteId as string) },  // ✅ Fix
       data: {
         name:      name     !== undefined ? name               : existing.name,
         isActive:  isActive !== undefined ? Boolean(isActive)  : existing.isActive,
@@ -280,18 +273,20 @@ export const updateRute = async (req: Request, res: Response): Promise<any> => {
 };
 
 // ============================================================
-// DELETE: Hapus rute + semua waypointnya (cascade)
+// DELETE: Hapus rute + semua waypointnya
 // ============================================================
 export const hapusRute = async (req: Request, res: Response): Promise<any> => {
   try {
     const { ruteId } = req.params;
 
-    const existing = await prisma.routeTemplate.findUnique({ where: { id: BigInt(ruteId) } });
+    const existing = await prisma.routeTemplate.findUnique({
+      where: { id: BigInt(ruteId as string) }  // ✅ Fix
+    });
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Rute tidak ditemukan' });
     }
 
-    await prisma.routeTemplate.delete({ where: { id: BigInt(ruteId) } });
+    await prisma.routeTemplate.delete({ where: { id: BigInt(ruteId as string) } });  // ✅ Fix
 
     return res.status(200).json({ success: true, message: 'Rute berhasil dihapus' });
   } catch (error: any) {
@@ -301,19 +296,20 @@ export const hapusRute = async (req: Request, res: Response): Promise<any> => {
 
 // ============================================================
 // PATCH: Toggle aktif/nonaktif rute
-// ✅ Diperbaiki: nama fungsi sebelumnya salah (getRingkasanHasil)
 // ============================================================
 export const toggleStatusRute = async (req: Request, res: Response): Promise<any> => {
   try {
     const { ruteId } = req.params;
 
-    const existing = await prisma.routeTemplate.findUnique({ where: { id: BigInt(ruteId) } });
+    const existing = await prisma.routeTemplate.findUnique({
+      where: { id: BigInt(ruteId as string) }  // ✅ Fix
+    });
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Rute tidak ditemukan' });
     }
 
     const updated = await prisma.routeTemplate.update({
-      where: { id: BigInt(ruteId) },
+      where: { id: BigInt(ruteId as string) },  // ✅ Fix
       data:  { isActive: !existing.isActive },
     });
 
@@ -328,26 +324,28 @@ export const toggleStatusRute = async (req: Request, res: Response): Promise<any
 };
 
 // ============================================================
-// POST: Tambah waypoint ke rute (satu per satu atau bulk)
+// POST: Tambah waypoint ke rute
 // ============================================================
 export const tambahWaypoint = async (req: Request, res: Response): Promise<any> => {
   try {
     const { ruteId } = req.params;
     const { name, latitude, longitude, order, bulk } = req.body;
 
-    const rute = await prisma.routeTemplate.findUnique({ where: { id: BigInt(ruteId) } });
+    const rute = await prisma.routeTemplate.findUnique({
+      where: { id: BigInt(ruteId as string) }  // ✅ Fix
+    });
     if (!rute) {
       return res.status(404).json({ success: false, message: 'Rute tidak ditemukan' });
     }
 
     if (bulk && Array.isArray(bulk)) {
-      await prisma.routeWaypoint.deleteMany({ where: { routeId: BigInt(ruteId) } });
+      await prisma.routeWaypoint.deleteMany({ where: { routeId: BigInt(ruteId as string) } });  // ✅ Fix
 
       const created = await prisma.$transaction(
         bulk.map((wp: any, idx: number) =>
           prisma.routeWaypoint.create({
             data: {
-              routeId:   BigInt(ruteId),
+              routeId:   BigInt(ruteId as string),  // ✅ Fix
               order:     wp.order ?? idx + 1,
               name:      wp.name,
               latitude:  Number(wp.latitude),
@@ -376,7 +374,7 @@ export const tambahWaypoint = async (req: Request, res: Response): Promise<any> 
     let urutan = order;
     if (!urutan) {
       const maxOrder = await prisma.routeWaypoint.aggregate({
-        where: { routeId: BigInt(ruteId) },
+        where: { routeId: BigInt(ruteId as string) },  // ✅ Fix
         _max: { order: true }
       });
       urutan = (maxOrder._max.order ?? 0) + 1;
@@ -384,7 +382,7 @@ export const tambahWaypoint = async (req: Request, res: Response): Promise<any> 
 
     const wp = await prisma.routeWaypoint.create({
       data: {
-        routeId:   BigInt(ruteId),
+        routeId:   BigInt(ruteId as string),  // ✅ Fix
         order:     urutan,
         name,
         latitude:  Number(latitude),
@@ -409,13 +407,15 @@ export const updateWaypoint = async (req: Request, res: Response): Promise<any> 
     const { waypointId } = req.params;
     const { name, latitude, longitude, order } = req.body;
 
-    const existing = await prisma.routeWaypoint.findUnique({ where: { id: BigInt(waypointId) } });
+    const existing = await prisma.routeWaypoint.findUnique({
+      where: { id: BigInt(waypointId as string) }  // ✅ Fix
+    });
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Waypoint tidak ditemukan' });
     }
 
     const updated = await prisma.routeWaypoint.update({
-      where: { id: BigInt(waypointId) },
+      where: { id: BigInt(waypointId as string) },  // ✅ Fix
       data: {
         name:      name      !== undefined ? name               : existing.name,
         latitude:  latitude  !== undefined ? Number(latitude)   : existing.latitude,
@@ -440,7 +440,9 @@ export const hapusWaypoint = async (req: Request, res: Response): Promise<any> =
   try {
     const { waypointId } = req.params;
 
-    const existing = await prisma.routeWaypoint.findUnique({ where: { id: BigInt(waypointId) } });
+    const existing = await prisma.routeWaypoint.findUnique({
+      where: { id: BigInt(waypointId as string) }  // ✅ Fix
+    });
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Waypoint tidak ditemukan' });
     }
@@ -449,7 +451,7 @@ export const hapusWaypoint = async (req: Request, res: Response): Promise<any> =
     const deletedOrder = existing.order;
 
     await prisma.$transaction([
-      prisma.routeWaypoint.delete({ where: { id: BigInt(waypointId) } }),
+      prisma.routeWaypoint.delete({ where: { id: BigInt(waypointId as string) } }),  // ✅ Fix
       prisma.routeWaypoint.updateMany({
         where: { routeId, order: { gt: deletedOrder } },
         data:  { order: { decrement: 1 } }
@@ -463,7 +465,7 @@ export const hapusWaypoint = async (req: Request, res: Response): Promise<any> =
 };
 
 // ============================================================
-// PUT: Reorder semua waypoint dalam satu rute (drag & drop)
+// PUT: Reorder semua waypoint
 // ============================================================
 export const reorderWaypoints = async (req: Request, res: Response): Promise<any> => {
   try {
@@ -490,8 +492,7 @@ export const reorderWaypoints = async (req: Request, res: Response): Promise<any
 };
 
 // ============================================================
-// GET: Ringkasan hasil operasional truk berdasarkan tanggal
-// ✅ Dipindahkan ke fungsi terpisah dengan nama yang benar
+// GET: Ringkasan hasil operasional truk
 // ============================================================
 export const getRingkasanHasil = async (req: Request, res: Response): Promise<any> => {
   const { truckId } = req.params;
@@ -505,14 +506,14 @@ export const getRingkasanHasil = async (req: Request, res: Response): Promise<an
     const [history, truk] = await Promise.all([
       prisma.locationHistory.findMany({
         where: {
-          truckId:   BigInt(truckId),
+          truckId:   BigInt(truckId as string),  // ✅ Fix
           createdAt: { gte: startDate, lte: endDate }
         },
         orderBy: { createdAt: 'asc' },
         select: { latitude: true, longitude: true, createdAt: true }
       }),
       prisma.truck.findUnique({
-        where: { id: BigInt(truckId) },
+        where: { id: BigInt(truckId as string) },  // ✅ Fix
         include: { operator: { select: { fullName: true, phoneNumber: true } } }
       })
     ]);
@@ -525,7 +526,7 @@ export const getRingkasanHasil = async (req: Request, res: Response): Promise<an
     try {
       taskSelesai = await prisma.task.findMany({
         where: {
-          truckId:     BigInt(truckId),
+          truckId:     BigInt(truckId as string),  // ✅ Fix
           completedAt: { gte: startDate, lte: endDate },
           status:      'SELESAI'
         },
@@ -558,7 +559,7 @@ export const getRingkasanHasil = async (req: Request, res: Response): Promise<an
     }
 
     const hariKerja  = getNamaHari(new Date(`${tglStr}T12:00:00+07:00`));
-    const ruteJadwal = await getRuteDariDB(BigInt(truckId), hariKerja);
+    const ruteJadwal = await getRuteDariDB(BigInt(truckId as string), hariKerja);  // ✅ Fix
 
     return res.status(200).json({
       success: true,

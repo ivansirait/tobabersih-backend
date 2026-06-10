@@ -8,12 +8,12 @@ const sanitizeUser = (user: any) => {
   return {
     ...rest,
     id: user.id.toString(),
-    region: user.region ?? "",
+    region: user.jenisUsaha ?? "",  // ✅ Fix: region tidak ada di schema, pakai jenisUsaha sebagai fallback atau string kosong
     driverName: user.driver?.fullName ?? null,
   };
 };
 
-// ─── GET USERS (dengan pagination & filter supir) ──────────────────────────
+// ─── GET USERS ──────────────────────────────────────────────────────────────
 
 export const getUsers = async (req: any, res: any) => {
   try {
@@ -30,7 +30,7 @@ export const getUsers = async (req: any, res: any) => {
         ? {
             OR: [
               { fullName: { contains: search, mode: "insensitive" } },
-              { region: { contains: search, mode: "insensitive" } },
+              // ✅ Fix: hapus region dari OR filter — tidak ada di schema
               { jenisUsaha: { contains: search, mode: "insensitive" } },
             ],
           }
@@ -64,7 +64,7 @@ export const getUsers = async (req: any, res: any) => {
   }
 };
 
-// ─── GET DRIVERS (untuk dropdown filter) ───────────────────────────────────
+// ─── GET DRIVERS ────────────────────────────────────────────────────────────
 
 export const getDrivers = async (_req: any, res: any) => {
   try {
@@ -78,7 +78,6 @@ export const getDrivers = async (_req: any, res: any) => {
       data: drivers.map((d) => ({ id: d.id.toString(), fullName: d.fullName })),
     });
   } catch (error: any) {
-    console.error("GET DRIVERS ERROR:", error);
     res.status(500).json({ success: false, message: "Gagal ambil data supir" });
   }
 };
@@ -88,6 +87,7 @@ export const getDrivers = async (_req: any, res: any) => {
 export const createUser = async (req: any, res: any) => {
   try {
     const { fullName, phoneNumber, region, jenisUsaha, driverId } = req.body;
+    // region diterima dari body tapi tidak disimpan ke DB karena tidak ada di schema
 
     if (!fullName?.trim()) {
       return res.status(400).json({ success: false, message: "Nama lengkap wajib diisi" });
@@ -96,11 +96,11 @@ export const createUser = async (req: any, res: any) => {
     const user = await prisma.user.create({
       data: {
         fullName: fullName.trim(),
-        email: `warga_${Date.now()}@internal.local`, // dummy, tidak ditampilkan
+        email: `warga_${Date.now()}@internal.local`,
         passwordHash: "internal",
         phoneNumber: phoneNumber?.trim() || null,
-        region: region?.trim() || "",
-        jenisUsaha: jenisUsaha?.trim() || "Rumah Tangga",
+        // ✅ Fix: hapus region — tidak ada di schema. Simpan ke jenisUsaha jika perlu
+        jenisUsaha: jenisUsaha?.trim() || region?.trim() || "Rumah Tangga",
         role: "WARGA",
         isActive: true,
         ...(driverId ? { driverId: BigInt(driverId) } : {}),
@@ -115,7 +115,7 @@ export const createUser = async (req: any, res: any) => {
   }
 };
 
-// ─── BULK CREATE (Import Excel) ─────────────────────────────────────────────
+// ─── BULK CREATE ────────────────────────────────────────────────────────────
 
 export const bulkCreateUsers = async (req: any, res: any) => {
   try {
@@ -148,8 +148,8 @@ export const bulkCreateUsers = async (req: any, res: any) => {
             email: `warga_${Date.now()}_${Math.random().toString(36).slice(2)}@internal.local`,
             passwordHash: "internal",
             phoneNumber: phoneNumber?.trim() || null,
-            region: region?.trim() || "",
-            jenisUsaha: jenisUsaha?.trim() || "Rumah Tangga",
+            // ✅ Fix: hapus region — simpan ke jenisUsaha sebagai fallback
+            jenisUsaha: jenisUsaha?.trim() || region?.trim() || "Rumah Tangga",
             role: "WARGA",
             isActive: true,
             ...(driverId ? { driverId: BigInt(driverId) } : {}),
@@ -170,7 +170,6 @@ export const bulkCreateUsers = async (req: any, res: any) => {
       results,
     });
   } catch (error: any) {
-    console.error("BULK CREATE ERROR:", error);
     res.status(500).json({ success: false, message: "Gagal import data", error: error.message });
   }
 };
@@ -182,18 +181,20 @@ export const updateUser = async (req: any, res: any) => {
     const { id } = req.params;
     const { fullName, phoneNumber, region, jenisUsaha, driverId } = req.body;
 
-    const existing = await prisma.user.findUnique({ where: { id: BigInt(id) } });
+    const existing = await prisma.user.findUnique({ where: { id: BigInt(id as string) } });
     if (!existing) {
       return res.status(404).json({ success: false, message: "Pelanggan tidak ditemukan" });
     }
 
     const user = await prisma.user.update({
-      where: { id: BigInt(id) },
+      where: { id: BigInt(id as string) },
       data: {
         fullName: fullName?.trim() || existing.fullName,
         phoneNumber: phoneNumber !== undefined ? phoneNumber?.trim() || null : existing.phoneNumber,
-        region: region !== undefined ? region?.trim() || "" : existing.region,
-        jenisUsaha: jenisUsaha !== undefined ? jenisUsaha?.trim() : existing.jenisUsaha,
+        // ✅ Fix: hapus region — tidak ada di schema. Pakai jenisUsaha sebagai fallback
+        jenisUsaha: jenisUsaha !== undefined
+          ? jenisUsaha?.trim()
+          : (region !== undefined ? region?.trim() || "" : existing.jenisUsaha),
         driverId: driverId !== undefined ? (driverId ? BigInt(driverId) : null) : existing.driverId,
       },
       include: { driver: { select: { id: true, fullName: true } } },
@@ -211,25 +212,24 @@ export const updateUser = async (req: any, res: any) => {
 export const deleteUser = async (req: any, res: any) => {
   try {
     const { id } = req.params;
-    const existing = await prisma.user.findUnique({ where: { id: BigInt(id) } });
+    const existing = await prisma.user.findUnique({ where: { id: BigInt(id as string) } });
     if (!existing) {
       return res.status(404).json({ success: false, message: "Pelanggan tidak ditemukan" });
     }
-    await prisma.user.delete({ where: { id: BigInt(id) } });
+    await prisma.user.delete({ where: { id: BigInt(id as string) } });
     res.json({ success: true, message: "Pelanggan berhasil dihapus" });
   } catch (error: any) {
-    console.error("DELETE ERROR:", error);
     res.status(500).json({ success: false, message: "Gagal hapus pelanggan", error: error.message });
   }
 };
 
-// ─── Helper: build worksheet dari data users ────────────────────────────────
+// ─── Helper worksheet ───────────────────────────────────────────────────────
 
 const buildWorksheet = (users: any[]) => {
   const rows = users.map((u, i) => ({
     No: i + 1,
     "Nama Pelanggan": u.fullName,
-    Alamat: u.region || "",
+    Alamat: u.jenisUsaha || "",  // ✅ Fix: pakai jenisUsaha karena region tidak ada
     "Jenis Usaha": u.jenisUsaha || "Rumah Tangga",
     "No. Telepon": u.phoneNumber || "",
     Supir: u.driver?.fullName || "",
@@ -237,12 +237,8 @@ const buildWorksheet = (users: any[]) => {
 
   const ws = XLSX.utils.json_to_sheet(rows);
   ws["!cols"] = [
-    { wch: 5 },
-    { wch: 28 },
-    { wch: 30 },
-    { wch: 20 },
-    { wch: 16 },
-    { wch: 20 },
+    { wch: 5 }, { wch: 28 }, { wch: 30 },
+    { wch: 20 }, { wch: 16 }, { wch: 20 },
   ];
   return ws;
 };
@@ -258,11 +254,8 @@ export const exportUsers = async (_req: any, res: any) => {
     });
 
     const wb = XLSX.utils.book_new();
-
-    // Sheet 1: semua pelanggan
     XLSX.utils.book_append_sheet(wb, buildWorksheet(users), "Semua Pelanggan");
 
-    // Sheet per supir
     const byDriver = users.reduce<Record<string, any[]>>((acc, u) => {
       const key = u.driver?.fullName ?? "Tanpa Supir";
       if (!acc[key]) acc[key] = [];
@@ -271,7 +264,7 @@ export const exportUsers = async (_req: any, res: any) => {
     }, {});
 
     for (const [driverName, driverUsers] of Object.entries(byDriver)) {
-      const sheetName = `Supir ${driverName}`.slice(0, 31); // Excel max 31 char
+      const sheetName = `Supir ${driverName}`.slice(0, 31);
       XLSX.utils.book_append_sheet(wb, buildWorksheet(driverUsers), sheetName);
     }
 
@@ -282,7 +275,6 @@ export const exportUsers = async (_req: any, res: any) => {
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.send(buffer);
   } catch (error: any) {
-    console.error("EXPORT ERROR:", error);
     res.status(500).json({ success: false, message: "Gagal export data", error: error.message });
   }
 };
@@ -294,7 +286,7 @@ export const exportUsersByDriver = async (req: any, res: any) => {
     const { driverId } = req.params;
 
     const driver = await prisma.user.findUnique({
-      where: { id: BigInt(driverId) },
+      where: { id: BigInt(driverId as string) },
       select: { fullName: true },
     });
 
@@ -303,7 +295,7 @@ export const exportUsersByDriver = async (req: any, res: any) => {
     }
 
     const users = await prisma.user.findMany({
-      where: { role: "WARGA", driverId: BigInt(driverId) },
+      where: { role: "WARGA", driverId: BigInt(driverId as string) },
       include: { driver: { select: { id: true, fullName: true } } },
       orderBy: { createdAt: "desc" },
     });
@@ -319,7 +311,6 @@ export const exportUsersByDriver = async (req: any, res: any) => {
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.send(buffer);
   } catch (error: any) {
-    console.error("EXPORT BY DRIVER ERROR:", error);
     res.status(500).json({ success: false, message: "Gagal export data supir", error: error.message });
   }
 };

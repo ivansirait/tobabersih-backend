@@ -17,20 +17,19 @@ export const getDashboardKinerja = async (req: Request, res: Response) => {
 
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    
+
     const laporanMingguan = await prisma.report.findMany({
       where: { createdAt: { gte: sevenDaysAgo } },
       select: { createdAt: true },
     });
 
-    // Kelompokkan laporan mingguan per hari
-    const laporanPerHari = new Map();
+    const laporanPerHariMap = new Map<string, number>();
     laporanMingguan.forEach(l => {
       const tanggal = l.createdAt.toISOString().split('T')[0];
-      laporanPerHari.set(tanggal, (laporanPerHari.get(tanggal) || 0) + 1);
+      laporanPerHariMap.set(tanggal, (laporanPerHariMap.get(tanggal) || 0) + 1);
     });
 
-    const laporanMingguanFormatted = Array.from(laporanPerHari.entries()).map(([tanggal, jumlah]) => ({
+    const laporanMingguanFormatted = Array.from(laporanPerHariMap.entries()).map(([tanggal, jumlah]) => ({
       tanggal,
       jumlah,
     }));
@@ -43,18 +42,9 @@ export const getDashboardKinerja = async (req: Request, res: Response) => {
       take: 5,
     });
 
-    // Ambil data hotspot dari laporan yang memiliki titik koordinat
     const hotspotSampah = await prisma.report.findMany({
-      where: {
-        status: { in: ['PENDING', 'DITINDAKLANJUTI'] }
-      },
-      select: {
-        id: true,
-        latitude: true,
-        longitude: true,
-        description: true,
-        pelapor: true,
-      },
+      where: { status: { in: ['PENDING', 'DITINDAKLANJUTI'] } },
+      select: { id: true, latitude: true, longitude: true, description: true, pelapor: true },
       take: 10,
     });
 
@@ -75,14 +65,14 @@ export const getDashboardKinerja = async (req: Request, res: Response) => {
             pelapor: h.pelapor,
           })),
         },
-        grafik: { 
+        grafik: {
           laporanMingguan: laporanMingguanFormatted,
           performaArmada: performaArmada.map(p => ({
             driverId: p.driverId,
             totalSelesai: p._count.id,
           })),
         },
-        ringkasanWilayah: { 
+        ringkasanWilayah: {
           wilayahAduanTertinggi: [],
           wilayahLambat: [],
         },
@@ -114,7 +104,6 @@ export const getMonitoringArmada = async (req: Request, res: Response) => {
     });
 
     const totalArmada = armada.length;
-
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
@@ -137,13 +126,8 @@ export const getMonitoringArmada = async (req: Request, res: Response) => {
     });
 
     const truckDetails = await prisma.truck.findMany({
-      where: {
-        id: { in: armadaPalingAktif.map(a => a.truckId!).filter(Boolean) }
-      },
-      select: {
-        id: true,
-        plateNumber: true,
-      },
+      where: { id: { in: armadaPalingAktif.map(a => a.truckId!).filter(Boolean) } },
+      select: { id: true, plateNumber: true },
     });
 
     return res.json({
@@ -159,17 +143,13 @@ export const getMonitoringArmada = async (req: Request, res: Response) => {
           sopir: t.operator?.fullName ?? null,
           telepon: t.operator?.phoneNumber ?? null,
           tugasAktif: t.tasks[0]
-            ? {
-                id: t.tasks[0].id.toString(),
-                location: t.tasks[0].location,
-                createdAt: t.tasks[0].createdAt,
-              }
+            ? { id: t.tasks[0].id.toString(), location: t.tasks[0].location, createdAt: t.tasks[0].createdAt }
             : null,
         })),
-        statistik: { 
-          totalArmada, 
-          totalPerjalananHariIni, 
-          rataRataRitase, 
+        statistik: {
+          totalArmada,
+          totalPerjalananHariIni,
+          rataRataRitase,
           armadaPalingAktif: armadaPalingAktif.map(a => ({
             truckId: a.truckId,
             truckPlate: truckDetails.find(t => t.id === a.truckId)?.plateNumber || '-',
@@ -189,33 +169,39 @@ export const getMonitoringArmada = async (req: Request, res: Response) => {
 // ══════════════════════════════════════════════════════════════════════════════
 export const getStatistikOperasional = async (req: Request, res: Response) => {
   try {
-    // Laporan per wilayah dari Location model
-    const laporanPerWilayah = await prisma.location.findMany({
-      where: { locationType: 'KECAMATAN' },
-      select: {
-        name: true,
-        _count: { select: { reports: true } },
-      },
+    // FIX: Report tidak punya locationId, dan Location tidak punya relasi ke Report.
+    // Gunakan field 'district' dari Task untuk statistik per wilayah.
+    const semuaTask = await prisma.task.findMany({
+      select: { district: true, status: true },
+      where: { district: { not: null } },
     });
 
-    // Group by bulan untuk tren
+    const wilayahMap = new Map<string, number>();
+    for (const task of semuaTask) {
+      const nama = task.district ?? 'Tanpa Wilayah';
+      wilayahMap.set(nama, (wilayahMap.get(nama) || 0) + 1);
+    }
+
+    const laporanPerWilayah = Array.from(wilayahMap.entries()).map(([nama, totalLaporan]) => ({
+      nama,
+      totalLaporan,
+    }));
+
     const laporanSetahun = await prisma.report.findMany({
       where: {
         createdAt: {
           gte: new Date(new Date().setMonth(new Date().getMonth() - 11)),
         },
       },
-      select: {
-        createdAt: true,
-      },
+      select: { createdAt: true },
     });
 
     const trenBulanan = Array.from({ length: 12 }, (_, i) => {
       const bulan = new Date();
       bulan.setMonth(bulan.getMonth() - i);
       const bulanName = bulan.toLocaleString('id-ID', { month: 'long', year: 'numeric' });
-      const count = laporanSetahun.filter(l => 
-        l.createdAt.getMonth() === bulan.getMonth() && 
+      const count = laporanSetahun.filter(l =>
+        l.createdAt.getMonth() === bulan.getMonth() &&
         l.createdAt.getFullYear() === bulan.getFullYear()
       ).length;
       return { bulan: bulanName, jumlah: count };
@@ -234,35 +220,19 @@ export const getStatistikOperasional = async (req: Request, res: Response) => {
       : 0;
 
     const totalLaporan = await prisma.report.count();
-    const tingkatPenyelesaian = totalLaporan > 0 
-      ? ((laporanSelesai.length / totalLaporan) * 100).toFixed(1) 
+    const tingkatPenyelesaian = totalLaporan > 0
+      ? ((laporanSelesai.length / totalLaporan) * 100).toFixed(1)
       : '0';
 
-    // Ambil semua titik untuk heatmap
     const semuaTitik = await prisma.report.findMany({
-      select: {
-        id: true,
-        latitude: true,
-        longitude: true,
-        status: true,
-      },
+      select: { id: true, latitude: true, longitude: true, status: true },
     });
-
-    const titikAduan = semuaTitik.map((t) => ({
-      id: t.id.toString(),
-      lat: Number(t.latitude),
-      lng: Number(t.longitude),
-      status: t.status,
-    }));
 
     return res.json({
       success: true,
       data: {
         statistikLaporan: {
-          laporanPerWilayah: laporanPerWilayah.map(l => ({
-            nama: l.name,
-            totalLaporan: l._count.reports,
-          })),
+          laporanPerWilayah,
           trenBulanan,
         },
         statistikOperasional: {
@@ -270,7 +240,12 @@ export const getStatistikOperasional = async (req: Request, res: Response) => {
           tingkatPenyelesaian: `${tingkatPenyelesaian}%`,
           performaWilayah: [],
         },
-        heatmap: titikAduan,
+        heatmap: semuaTitik.map(t => ({
+          id: t.id.toString(),
+          lat: Number(t.latitude),
+          lng: Number(t.longitude),
+          status: t.status,
+        })),
       },
     });
   } catch (error) {
@@ -285,11 +260,9 @@ export const getStatistikOperasional = async (req: Request, res: Response) => {
 export const getPetaAduan = async (req: Request, res: Response) => {
   try {
     const { status, startDate, endDate } = req.query;
-
     const where: any = {};
 
     if (status) where.status = status;
-
     if (startDate || endDate) {
       where.createdAt = {};
       if (startDate) where.createdAt.gte = new Date(startDate as string);
@@ -299,15 +272,8 @@ export const getPetaAduan = async (req: Request, res: Response) => {
     const titikAduan = await prisma.report.findMany({
       where,
       select: {
-        id: true,
-        description: true,
-        latitude: true,
-        longitude: true,
-        status: true,
-        photoUrl: true,
-        createdAt: true,
-        pelapor: true,
-        email: true,
+        id: true, description: true, latitude: true, longitude: true,
+        status: true, photoUrl: true, createdAt: true, pelapor: true, email: true,
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -320,7 +286,7 @@ export const getPetaAduan = async (req: Request, res: Response) => {
     return res.json({
       success: true,
       data: {
-        titikAduan: titikAduan.map((t) => ({
+        titikAduan: titikAduan.map(t => ({
           id: t.id.toString(),
           deskripsi: t.description,
           lat: Number(t.latitude),
@@ -331,7 +297,7 @@ export const getPetaAduan = async (req: Request, res: Response) => {
           foto: t.photoUrl,
           waktu: t.createdAt,
         })),
-        kecamatan: kecamatanList.map((k) => ({
+        kecamatan: kecamatanList.map(k => ({
           name: k.name,
           code: k.code,
           center: [Number(k.latitude), Number(k.longitude)],
@@ -360,13 +326,11 @@ export const exportRekapLaporan = async (req: Request, res: Response) => {
 
       const aduan = await prisma.report.findMany({
         where,
-        include: {
-          user: { select: { fullName: true } },
-        },
+        include: { user: { select: { fullName: true } } },
         orderBy: { createdAt: 'desc' },
       });
-      
-      data = aduan.map((a) => ({
+
+      data = aduan.map(a => ({
         'ID Laporan': a.id.toString(),
         'Pelapor': a.user?.fullName ?? a.pelapor ?? '-',
         'Email Pelapor': a.email ?? '-',
@@ -376,19 +340,16 @@ export const exportRekapLaporan = async (req: Request, res: Response) => {
         'Waktu Selesai': a.status === 'SELESAI' ? new Date(a.updatedAt).toLocaleString('id-ID') : '-',
       }));
       filename = `rekap_aduan_${new Date().toISOString().slice(0, 10)}`;
-    }
 
-    else if (type === 'armada') {
+    } else if (type === 'armada') {
       const armada = await prisma.truck.findMany({
         include: {
           operator: { select: { fullName: true } },
-          tasks: {
-            where: { status: 'SELESAI' },
-          },
+          tasks: { where: { status: 'SELESAI' } },
         },
       });
-      
-      data = armada.map((a) => ({
+
+      data = armada.map(a => ({
         'Plat Nomor': a.plateNumber,
         'Supir': a.operator?.fullName ?? '-',
         'Status': a.status,
@@ -396,46 +357,51 @@ export const exportRekapLaporan = async (req: Request, res: Response) => {
         'Last Ping': a.lastPing ? new Date(a.lastPing).toLocaleString('id-ID') : '-',
       }));
       filename = `rekap_armada_${new Date().toISOString().slice(0, 10)}`;
-    }
 
-    else if (type === 'wilayah') {
-      const wilayah = await prisma.location.findMany({
-        where: { locationType: 'KECAMATAN' },
-        include: { reports: true },
+    } else if (type === 'wilayah') {
+      // FIX: Report tidak punya locationId, Location tidak punya relasi ke Report.
+      // Gunakan field 'district' dari Task untuk rekap per wilayah.
+      const semuaTask = await prisma.task.findMany({
+        select: { district: true, status: true },
       });
-      
-      data = wilayah.map((w) => ({
-        'Kecamatan': w.name,
-        'Kode': w.code ?? '-',
-        'Total Laporan': w.reports.length,
-        'Laporan Selesai': w.reports.filter((r) => r.status === 'SELESAI').length,
-        'Laporan Pending': w.reports.filter((r) => r.status === 'PENDING').length,
+
+      const wilayahMap = new Map<string, { total: number; selesai: number; pending: number }>();
+      for (const task of semuaTask) {
+        const nama = task.district ?? 'Tanpa Wilayah';
+        const existing = wilayahMap.get(nama) ?? { total: 0, selesai: 0, pending: 0 };
+        existing.total += 1;
+        if (task.status === 'SELESAI') existing.selesai += 1;
+        if (task.status === 'DITUGASKAN') existing.pending += 1;
+        wilayahMap.set(nama, existing);
+      }
+
+      data = Array.from(wilayahMap.entries()).map(([nama, stat]) => ({
+        'Kecamatan': nama,
+        'Total Tugas': stat.total,
+        'Tugas Selesai': stat.selesai,
+        'Tugas Pending': stat.pending,
       }));
       filename = `rekap_wilayah_${new Date().toISOString().slice(0, 10)}`;
-    }
 
-    else if (type === 'supir') {
+    } else if (type === 'supir') {
       const supir = await prisma.user.findMany({
         where: { role: 'OPERATOR' },
-        include: {
-          tasks: true,
-        },
+        include: { tasks: true },
         orderBy: { fullName: 'asc' },
       });
-      
-      data = supir.map((s) => ({
+
+      data = supir.map(s => ({
         'Nama Supir': s.fullName ?? '-',
         'Email': s.email ?? '-',
         'No. Telepon': s.phoneNumber ?? '-',
         'Status': s.isActive ? 'Aktif' : 'Tidak Aktif',
         'Total Tugas': s.tasks.length,
-        'Tugas Selesai': s.tasks.filter((t) => t.status === 'SELESAI').length,
+        'Tugas Selesai': s.tasks.filter(t => t.status === 'SELESAI').length,
         'Waktu Bergabung': s.createdAt ? new Date(s.createdAt).toLocaleDateString('id-ID') : '-',
       }));
       filename = `rekap_supir_${new Date().toISOString().slice(0, 10)}`;
-    }
 
-    else if (type === 'rute') {
+    } else if (type === 'rute') {
       const rute = await prisma.routeTemplate.findMany({
         include: {
           truck: { select: { plateNumber: true } },
@@ -443,8 +409,8 @@ export const exportRekapLaporan = async (req: Request, res: Response) => {
         },
         orderBy: { name: 'asc' },
       });
-      
-      data = rute.map((r) => ({
+
+      data = rute.map(r => ({
         'Nama Rute': r.name,
         'Hari': r.dayOfWeek ?? '-',
         'Plat Truk': r.truck?.plateNumber ?? '-',
@@ -453,6 +419,7 @@ export const exportRekapLaporan = async (req: Request, res: Response) => {
         'Waktu Dibuat': r.createdAt ? new Date(r.createdAt).toLocaleDateString('id-ID') : '-',
       }));
       filename = `rekap_rute_${new Date().toISOString().slice(0, 10)}`;
+
     } else {
       return res.status(400).json({ success: false, message: 'Jenis laporan tidak valid' });
     }
@@ -466,16 +433,15 @@ export const exportRekapLaporan = async (req: Request, res: Response) => {
       const worksheet = workbook.addWorksheet('Rekapitulasi');
 
       const headers = Object.keys(data[0]);
-      worksheet.columns = headers.map((key) => ({ header: key, key, width: 22 }));
+      worksheet.columns = headers.map(key => ({ header: key, key, width: 22 }));
 
-      worksheet.getRow(1).eachCell((cell) => {
+      worksheet.getRow(1).eachCell(cell => {
         cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF16a34a' } };
         cell.alignment = { vertical: 'middle', horizontal: 'center' };
       });
 
       worksheet.addRows(data);
-
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}.xlsx"`);
       await workbook.xlsx.write(res);
@@ -484,7 +450,6 @@ export const exportRekapLaporan = async (req: Request, res: Response) => {
 
     if (format === 'pdf') {
       const doc = new PDFDocument({ margin: 50, size: 'A4', layout: 'landscape' });
-
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
       doc.pipe(res);
@@ -547,7 +512,7 @@ export const getFilterOptions = async (_req: Request, res: Response) => {
     return res.json({
       success: true,
       data: {
-        kecamatan: kecamatan.map((k) => k.name),
+        kecamatan: kecamatan.map(k => k.name),
         status: ['PENDING', 'DITINDAKLANJUTI', 'SELESAI'],
       },
     });

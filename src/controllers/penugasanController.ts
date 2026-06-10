@@ -43,10 +43,10 @@ export const createRutin = async (req: Request, res: Response): Promise<any> => 
         taskNumber,
         type: 'RUTIN',
         location,
-        scheduledAt: new Date(scheduledAt),
+        scheduled_at: new Date(scheduledAt),  // ✅ Fix: scheduledAt → scheduled_at
         notes: notes || null,
-        driverId: BigInt(driverId),
-        truckId: truckId ? BigInt(truckId) : null,
+        driverId: BigInt(driverId as string),  // ✅ Fix: as string
+        truckId: truckId ? BigInt(truckId as string) : null,  // ✅ Fix: as string
       }
     });
 
@@ -78,7 +78,7 @@ export const createAduan = async (req: Request, res: Response): Promise<any> => 
 
     if (reportId) {
       const existingReport = await prisma.report.findUnique({
-        where: { id: BigInt(reportId) },
+        where: { id: BigInt(reportId as string) },  // ✅ Fix
         select: { latitude: true, longitude: true, pelapor: true }
       });
 
@@ -89,7 +89,7 @@ export const createAduan = async (req: Request, res: Response): Promise<any> => 
       }
 
       const existingTask = await prisma.task.findFirst({
-        where: { reportId: BigInt(reportId) }
+        where: { reportId: BigInt(reportId as string) }  // ✅ Fix
       });
 
       if (existingTask) {
@@ -104,13 +104,13 @@ export const createAduan = async (req: Request, res: Response): Promise<any> => 
     const taskNumber = `ADUAN-${dateStr}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const result = await prisma.$transaction(async (tx) => {
-      const truck = await tx.truck.findUnique({ where: { id: BigInt(truckId) } });
+      const truck = await tx.truck.findUnique({ where: { id: BigInt(truckId as string) } });  // ✅ Fix
 
       if (!truck) throw new Error("Truk tidak ditemukan.");
       if (truck.status === 'BUSY') throw new Error("Armada ini sedang bertugas. Pilih armada lain atau tunggu sampai selesai.");
 
       const driverBusy = await tx.task.findFirst({
-        where: { driverId: BigInt(driverId), status: { not: 'SELESAI' } }
+        where: { driverId: BigInt(driverId as string), status: { not: 'SELESAI' } }  // ✅ Fix
       });
 
       if (driverBusy) throw new Error("Supir ini sedang memiliki tugas aktif. Pilih supir lain atau tunggu sampai selesai.");
@@ -123,20 +123,20 @@ export const createAduan = async (req: Request, res: Response): Promise<any> => 
           district: district || null,
           description: description || null,
           notes: notes || null,
-          scheduledAt: scheduledAt ? new Date(scheduledAt) : new Date(),
-          driverId: BigInt(driverId),
-          truckId: BigInt(truckId),
-          reportId: reportId ? BigInt(reportId) : null,
+          scheduled_at: scheduledAt ? new Date(scheduledAt) : new Date(),  // ✅ Fix: scheduledAt → scheduled_at
+          driverId: BigInt(driverId as string),  // ✅ Fix
+          truckId: BigInt(truckId as string),    // ✅ Fix
+          reportId: reportId ? BigInt(reportId as string) : null,  // ✅ Fix
           latitude: taskLat,
           longitude: taskLng,
           pelapor: pelaporFromReport,
         }
       });
 
-      await tx.truck.update({ where: { id: BigInt(truckId) }, data: { status: 'BUSY' } });
+      await tx.truck.update({ where: { id: BigInt(truckId as string) }, data: { status: 'BUSY' } });  // ✅ Fix
 
       if (reportId) {
-        await tx.report.update({ where: { id: BigInt(reportId) }, data: { status: 'DITINDAKLANJUTI' } });
+        await tx.report.update({ where: { id: BigInt(reportId as string) }, data: { status: 'DITINDAKLANJUTI' } });  // ✅ Fix
       }
 
       return newTask;
@@ -202,7 +202,7 @@ export const getSemuaPenugasan = async (req: Request, res: Response): Promise<an
                 location: routeTemplate.name,
                 latitude: firstWp.latitude,
                 longitude: firstWp.longitude,
-                scheduledAt: new Date(),
+                scheduled_at: new Date(),  // ✅ Fix: scheduledAt → scheduled_at
                 notes: `Rute Kerja Operasional Dump Truck - Hari ${hariIni}. Supir diwajibkan menyelesaikan seluruh rangkaian titik rute harian yang tersedia.`,
                 driverId: driverIdBigInt,
                 truckId: truck.id,
@@ -220,14 +220,14 @@ export const getSemuaPenugasan = async (req: Request, res: Response): Promise<an
         truck:  { select: { id: true, plateNumber: true } },
         report: { select: { id: true, description: true, pelapor: true } }
       },
-      orderBy: driverIdBigInt ? { scheduledAt: 'desc' } : { createdAt: 'desc' }
+      orderBy: driverIdBigInt ? { scheduled_at: 'desc' } : { createdAt: 'desc' }  // ✅ Fix
     });
 
     const formattedTasks = await Promise.all(tasks.map(async (task: any) => {
       let waypoints: any[] = [];
 
       if (task.type === 'RUTE' && task.truckId) {
-        const hariTugas = getNamaHari(task.scheduledAt);
+        const hariTugas = getNamaHari(task.scheduled_at);  // ✅ Fix
 
         const template = await prisma.routeTemplate.findFirst({
           where: { truckId: task.truckId, dayOfWeek: hariTugas, isActive: true },
@@ -284,7 +284,7 @@ export const updateTaskStatus = async (req: Request, res: Response): Promise<any
 
   try {
     const statusUpperCase = status.toUpperCase();
-    const taskIdBigInt    = BigInt(id);
+    const taskIdBigInt    = BigInt(id as string);  // ✅ Fix
 
     const updatedTask = await prisma.task.update({
       where: { id: taskIdBigInt },
@@ -372,7 +372,7 @@ export const getNotifikasiUser = async (req: Request, res: Response): Promise<an
 
   try {
     const notifications = await prisma.notification.findMany({
-      where:   { userId: BigInt(userId) },
+      where:   { userId: BigInt(userId as string) },  // ✅ Fix
       orderBy: { createdAt: 'desc' }
     });
 
@@ -387,7 +387,7 @@ export const getNotifikasiUser = async (req: Request, res: Response): Promise<an
     console.error("ERROR GET NOTIFIKASI:", error);
     return res.status(500).json({ success: false, message: "Gagal mengambil notifikasi" });
   }
-}; // ✅ Kurung tutup getNotifikasiUser — sekarang benar
+};
 
 // ─── Hapus Penugasan ────────────────────────────────────────────
 export const deletePenugasan = async (req: Request, res: Response): Promise<any> => {
@@ -398,7 +398,7 @@ export const deletePenugasan = async (req: Request, res: Response): Promise<any>
   }
 
   try {
-    const taskId = BigInt(id);
+    const taskId = BigInt(id as string);  // ✅ Fix
 
     const task = await prisma.task.findUnique({
       where: { id: taskId },
@@ -410,13 +410,9 @@ export const deletePenugasan = async (req: Request, res: Response): Promise<any>
     }
 
     await prisma.$transaction(async (tx) => {
-      // Hapus TaskPhoto dulu agar tidak ada constraint violation
       await tx.taskPhoto.deleteMany({ where: { taskId } });
-
-      // Hapus task utama
       await tx.task.delete({ where: { id: taskId } });
 
-      // Reset status truk kembali ke AVAILABLE
       if (task.truckId && task.truck?.status === 'BUSY') {
         await tx.truck.update({
           where: { id: task.truckId },
@@ -424,7 +420,6 @@ export const deletePenugasan = async (req: Request, res: Response): Promise<any>
         });
       }
 
-      // Reset status laporan asal ke PENDING
       if (task.reportId) {
         await tx.report.update({
           where: { id: task.reportId },
