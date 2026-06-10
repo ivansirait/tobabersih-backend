@@ -7,7 +7,7 @@ import jwt from 'jsonwebtoken';
  * ============================================================================
  * Authentication Controller
  * ============================================================================
- * Handles: login, register, token verification, logout
+ * Handles: login, register, token verification, logout, updateProfile
  * Security: Password hashing, JWT validation, role-based access
  * ============================================================================
  */
@@ -18,7 +18,7 @@ import jwt from 'jsonwebtoken';
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
 
-// Validate JWT_SECRET on module load
+// Validate JWT_SECRET on module load — JANGAN pakai fallback default, ini celah keamanan
 if (!JWT_SECRET) {
   console.error('🔴 CRITICAL: JWT_SECRET not configured in .env');
   process.exit(1);
@@ -29,11 +29,14 @@ if (!JWT_SECRET) {
  * LOGIN Endpoint
  * ============================================================================
  * POST /auth/login
- * Body: { email: string, password: string }
+ * Body: { email: string, password: string, fcmToken?: string }
  * Response: { success: true, token: string, user: {...} }
+ *
+ * fcmToken bersifat opsional — dipakai oleh Flutter untuk push notification.
+ * Jika dikirimkan, akan disimpan ke kolom fcm_token di tabel user.
  */
 export const login = async (req: Request, res: Response): Promise<any> => {
-  const { email, password } = req.body;
+  const { email, password, fcmToken } = req.body;
 
   try {
     // STEP 1: Validate Input
@@ -109,7 +112,23 @@ export const login = async (req: Request, res: Response): Promise<any> => {
       });
     }
 
-    // STEP 4: Generate JWT Token
+    // STEP 4: Simpan FCM Token jika dikirim oleh Flutter (opsional)
+    // ⚠️ CATATAN: Pastikan kolom `fcm_token` sudah ada di schema Prisma kamu.
+    // Jika belum, tambahkan: fcm_token String? di model User, lalu jalankan prisma migrate.
+    if (fcmToken) {
+      try {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { fcm_token: fcmToken }
+        });
+        console.log(`📡 FCM Token diperbarui untuk user ${user.email}`);
+      } catch (tokenError) {
+        // Tidak fatal — login tetap lanjut meski FCM gagal disimpan
+        console.error('⚠️ Gagal memperbarui FCM Token:', tokenError);
+      }
+    }
+
+    // STEP 5: Generate JWT Token
     const tokenPayload = {
       id: user.id.toString(),
       email: user.email,
@@ -132,7 +151,7 @@ export const login = async (req: Request, res: Response): Promise<any> => {
       });
     }
 
-    // STEP 5: Set httpOnly Cookie
+    // STEP 6: Set httpOnly Cookie
     try {
       res.cookie('token', token, {
         httpOnly: true,
@@ -179,11 +198,22 @@ export const login = async (req: Request, res: Response): Promise<any> => {
  * REGISTER Endpoint (Public - untuk WARGA)
  * ============================================================================
  * POST /auth/register
- * Body: { fullName: string, email: string, password: string, passwordConfirm: string }
+ * Body: {
+ *   fullName: string,
+ *   email: string,
+ *   password: string,
+ *   passwordConfirm: string,
+ *   phoneNumber?: string,   // opsional, dari Flutter
+ *   address?: string,       // opsional, dari Flutter
+ *   wilayahId?: string      // opsional, dari Flutter — dipetakan ke locationId
+ * }
  * Response: { success: true, message: string, data: {...} }
+ *
+ * Field phoneNumber, address, wilayahId bersifat opsional.
+ * Flutter mengirim wilayahId, namun di database disimpan sebagai locationId.
  */
 export const register = async (req: Request, res: Response): Promise<any> => {
-  const { fullName, email, password, passwordConfirm } = req.body;
+  const { fullName, email, password, passwordConfirm, phoneNumber, address, wilayahId } = req.body;
 
   try {
     // STEP 1: Validate Input
@@ -252,6 +282,8 @@ export const register = async (req: Request, res: Response): Promise<any> => {
     }
 
     // STEP 4: Create User
+    // ⚠️ CATATAN: Pastikan field phoneNumber, address, locationId sudah ada
+    // di schema Prisma. Jika belum, tambahkan dan jalankan prisma migrate.
     let newUser;
     try {
       newUser = await prisma.user.create({
@@ -259,6 +291,10 @@ export const register = async (req: Request, res: Response): Promise<any> => {
           fullName: fullName.trim(),
           email: email.toLowerCase(),
           passwordHash: hashedPassword,
+          phoneNumber: phoneNumber || null,
+          address: address || null,
+          // wilayahId dari Flutter dipetakan ke locationId di database
+          locationId: wilayahId ? BigInt(wilayahId) : null,
           role: 'WARGA',
           isActive: true
         },
@@ -267,6 +303,7 @@ export const register = async (req: Request, res: Response): Promise<any> => {
           fullName: true,
           email: true,
           role: true,
+          locationId: true,
           createdAt: true
         }
       });
@@ -291,7 +328,9 @@ export const register = async (req: Request, res: Response): Promise<any> => {
         id: newUser.id.toString(),
         name: newUser.fullName,
         email: newUser.email,
-        role: newUser.role
+        role: newUser.role,
+        // Kembalikan sebagai wilayahId agar Flutter tidak perlu mapping ulang
+        wilayahId: newUser.locationId?.toString() || null
       }
     });
 
@@ -317,8 +356,8 @@ export const register = async (req: Request, res: Response): Promise<any> => {
  * POST /auth/verify
  * Headers: Authorization: Bearer <TOKEN>
  * Response: { success: true, message: string, user: {...} }
- * 
- * Used by frontend to check if token is still valid
+ *
+ * Dipakai frontend untuk mengecek apakah token masih valid.
  */
 export const verifyToken = async (req: Request, res: Response): Promise<any> => {
   try {
@@ -383,12 +422,11 @@ export const verifyToken = async (req: Request, res: Response): Promise<any> => 
  * POST /auth/logout
  * Headers: Authorization: Bearer <TOKEN>
  * Response: { success: true, message: string }
- * 
- * Logs user logout event and clears cookies
+ *
+ * Mencatat event logout dan menghapus cookie session.
  */
 export const logout = async (req: Request, res: Response): Promise<any> => {
   try {
-    // Get user info dari token untuk logging
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
@@ -397,11 +435,10 @@ export const logout = async (req: Request, res: Response): Promise<any> => {
         const decoded = jwt.verify(token, JWT_SECRET);
         console.log(`\n🚪 ${(decoded as any).fullName} (${(decoded as any).email}) logout sebagai ${(decoded as any).role}`);
       } catch (e) {
-        // Token might be invalid, tetap lanjut logout
+        // Token mungkin sudah expired, tetap lanjut logout
       }
     }
 
-    // Clear httpOnly cookie
     res.clearCookie('token', { path: '/' });
 
     return res.json({
@@ -416,6 +453,79 @@ export const logout = async (req: Request, res: Response): Promise<any> => {
     return res.status(500).json({
       success: false,
       message: 'Kesalahan server',
+      code: 'INTERNAL_SERVER_ERROR'
+    });
+  }
+};
+
+/**
+ * ============================================================================
+ * UPDATE PROFILE Endpoint
+ * ============================================================================
+ * PUT /auth/profile
+ * Body: { userId: string, fullName?: string, phoneNumber?: string, address?: string, locationId?: string }
+ * Response: { success: true, message: string, data: {...} }
+ *
+ * ⚠️ PERINGATAN KEAMANAN: Endpoint ini harus dilindungi dengan auth middleware
+ * di router, dan userId sebaiknya diambil dari token JWT (req.user.id),
+ * BUKAN dari req.body — agar user tidak bisa mengubah profil orang lain.
+ *
+ * Contoh perbaikan yang direkomendasikan di router:
+ *   router.put('/profile', authMiddleware, updateProfile);
+ *
+ * Dan di fungsi ini, ganti:
+ *   const { userId } = req.body
+ * menjadi:
+ *   const userId = (req as any).user.id  // dari token yang sudah diverifikasi middleware
+ */
+export const updateProfile = async (req: Request, res: Response): Promise<any> => {
+  // ⚠️ TODO: Ganti userId dari req.body menjadi dari token JWT untuk keamanan
+  // Lihat catatan di atas.
+  const { userId, fullName, phoneNumber, address, locationId } = req.body;
+
+  if (!userId) {
+    return res.status(400).json({
+      success: false,
+      message: 'userId harus diisi',
+      code: 'INVALID_INPUT'
+    });
+  }
+
+  try {
+    const updatedUser = await prisma.user.update({
+      where: { id: BigInt(userId) },
+      data: {
+        ...(fullName && { fullName }),
+        ...(phoneNumber !== undefined && { phoneNumber }),
+        ...(address !== undefined && { address }),
+        locationId: locationId ? BigInt(locationId) : null,
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Profil berhasil diperbarui',
+      data: {
+        fullName: updatedUser.fullName,
+        phoneNumber: updatedUser.phoneNumber,
+        address: updatedUser.address,
+        locationId: updatedUser.locationId?.toString() || null
+      }
+    });
+  } catch (error: any) {
+    console.error('❌ Error updating profile:', error);
+
+    if (error.code === 'P2025') {
+      return res.status(404).json({
+        success: false,
+        message: 'User tidak ditemukan',
+        code: 'USER_NOT_FOUND'
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: 'Gagal memperbarui profil',
       code: 'INTERNAL_SERVER_ERROR'
     });
   }

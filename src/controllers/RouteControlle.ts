@@ -197,12 +197,11 @@ export const buatRute = async (req: Request, res: Response): Promise<any> => {
 
 // ============================================================
 // PUT: Update info rute (nama, truk, hari, aktif/nonaktif)
-// ✅ DIPERBAIKI: sekarang bisa update truckId dan dayOfWeek juga
+// ✅ GABUNGAN: sekarang bisa update truckId dan dayOfWeek juga (dari teman)
 // ============================================================
 export const updateRute = async (req: Request, res: Response): Promise<any> => {
   try {
     const { ruteId } = req.params;
-    // ✅ Tambahkan truckId dan dayOfWeek ke destructuring
     const { name, isActive, truckId, dayOfWeek } = req.body;
 
     const existing = await prisma.routeTemplate.findUnique({
@@ -212,7 +211,7 @@ export const updateRute = async (req: Request, res: Response): Promise<any> => {
       return res.status(404).json({ success: false, message: 'Rute tidak ditemukan' });
     }
 
-    // ✅ Validasi dayOfWeek kalau dikirim
+    // Validasi dayOfWeek kalau dikirim
     if (dayOfWeek) {
       const hariUpper = (dayOfWeek as string).toUpperCase();
       if (!HARI_VALID.includes(hariUpper)) {
@@ -223,10 +222,11 @@ export const updateRute = async (req: Request, res: Response): Promise<any> => {
       }
     }
 
-    // ✅ Kalau truckId atau dayOfWeek berubah, cek duplikat kombinasi truk+hari
-    const newTruckId  = truckId  ? BigInt(truckId)                        : existing.truckId;
-    const newDayOfWeek = dayOfWeek ? (dayOfWeek as string).toUpperCase()  : existing.dayOfWeek;
+    // Resolusi nilai akhir truckId dan dayOfWeek
+    const newTruckId   = truckId   ? BigInt(truckId)                       : existing.truckId;
+    const newDayOfWeek = dayOfWeek ? (dayOfWeek as string).toUpperCase()   : existing.dayOfWeek;
 
+    // Cek duplikat kombinasi truk+hari jika salah satu berubah
     if (
       newTruckId.toString() !== existing.truckId.toString() ||
       newDayOfWeek !== existing.dayOfWeek
@@ -249,10 +249,10 @@ export const updateRute = async (req: Request, res: Response): Promise<any> => {
     const updated = await prisma.routeTemplate.update({
       where: { id: BigInt(ruteId) },
       data: {
-        name:      name      !== undefined ? name                 : existing.name,
-        isActive:  isActive  !== undefined ? Boolean(isActive)   : existing.isActive,
-        truckId:   newTruckId,   // ✅ sekarang ikut diupdate
-        dayOfWeek: newDayOfWeek, // ✅ sekarang ikut diupdate
+        name:      name     !== undefined ? name               : existing.name,
+        isActive:  isActive !== undefined ? Boolean(isActive)  : existing.isActive,
+        truckId:   newTruckId,
+        dayOfWeek: newDayOfWeek,
       },
       include: {
         truck:     { select: { id: true, plateNumber: true } },
@@ -267,12 +267,12 @@ export const updateRute = async (req: Request, res: Response): Promise<any> => {
         id:      updated.id.toString(),
         truckId: updated.truckId.toString(),
         truck:   { ...updated.truck, id: updated.truck.id.toString() },
-        waypoints: updated.waypoints.map((wp) => ({
+        waypoints: updated.waypoints.map(wp => ({
           ...wp,
           id:      wp.id.toString(),
           routeId: wp.routeId.toString(),
-        })),
-      },
+        }))
+      }
     });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
@@ -417,7 +417,7 @@ export const updateWaypoint = async (req: Request, res: Response): Promise<any> 
     const updated = await prisma.routeWaypoint.update({
       where: { id: BigInt(waypointId) },
       data: {
-        name:      name      !== undefined ? name                : existing.name,
+        name:      name      !== undefined ? name               : existing.name,
         latitude:  latitude  !== undefined ? Number(latitude)   : existing.latitude,
         longitude: longitude !== undefined ? Number(longitude)  : existing.longitude,
         order:     order     !== undefined ? Number(order)      : existing.order,
@@ -445,14 +445,14 @@ export const hapusWaypoint = async (req: Request, res: Response): Promise<any> =
       return res.status(404).json({ success: false, message: 'Waypoint tidak ditemukan' });
     }
 
-    const routeId = existing.routeId;
+    const routeId      = existing.routeId;
     const deletedOrder = existing.order;
 
     await prisma.$transaction([
       prisma.routeWaypoint.delete({ where: { id: BigInt(waypointId) } }),
       prisma.routeWaypoint.updateMany({
         where: { routeId, order: { gt: deletedOrder } },
-        data: { order: { decrement: 1 } }
+        data:  { order: { decrement: 1 } }
       })
     ]);
 
