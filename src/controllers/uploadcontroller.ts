@@ -1,9 +1,15 @@
 import type { Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
+import ws from 'ws';
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!
+  process.env.SUPABASE_ANON_KEY!,
+  {
+    realtime: {
+      transport: ws
+    }
+  }
 );
 
 const BUCKET_NAME = 'galeri';

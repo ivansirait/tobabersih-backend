@@ -37,21 +37,18 @@ model User {
 }
 
 model Location {
-  id              BigInt                    @id @default(autoincrement())
-  name            String
-  locationType    String                    @map("location_type")
-  isActive        Boolean                   @default(true) @map("is_active")
-  code            String?                   @unique
-  latitude        Decimal                   @db.Decimal(10, 8)
-  longitude       Decimal                   @db.Decimal(11, 8)
-  address         String?
-  createdAt       DateTime                  @default(now()) @map("created_at")
-  updatedAt       DateTime                  @default(now()) @map("updated_at")
-  radius          Int?
-  capacity_volume Int?
-  geom            Unsupported("geography")?
-  population      Int?
-  routesStart     Route[]                   @relation("StartLocation")
+  id             BigInt                    @id @default(autoincrement())
+  name           String
+  locationType   String                    @map("location_type")
+  isActive       Boolean                   @default(true) @map("is_active")
+  code           String?                   @unique
+  latitude       Decimal                   @db.Decimal(10, 8)
+  longitude      Decimal                   @db.Decimal(11, 8)
+  address        String?
+  createdAt      DateTime                  @default(now()) @map("created_at")
+  updatedAt      DateTime                  @default(now()) @map("updated_at")
+  radius         Int?
+  routesStart    Route[]                   @relation("StartLocation")
 
   @@map("locations")
 }

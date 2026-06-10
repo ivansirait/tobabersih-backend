@@ -27,7 +27,7 @@ export const getDashboardStats = async (req: Request, res: Response) => {
       prisma.report.count({ where: { status: 'DITINDAKLANJUTI' } }),
       prisma.truck.count(),
       prisma.truck.count({ where: { status: 'AVAILABLE' } }),
-      prisma.task.groupBy({ by: ['type'], _count: true }) as Promise<Array<{ type: string; _count: number }>>,
+      prisma.task.groupBy({ by: ['type'], _count: true }) ,
       prisma.report.findMany({ where: { createdAt: { gte: sevenDaysAgo } }, select: { createdAt: true } }),
       prisma.report.findMany({
         where: { status: 'SELESAI' },

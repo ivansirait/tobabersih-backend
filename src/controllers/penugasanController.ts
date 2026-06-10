@@ -3,12 +3,26 @@ import { prisma } from '../config/db.js';
 
 export const createAduan = async (req: Request, res: Response): Promise<any> => {
   try {
-    const { reportId, driverId, truckId, location, district, description} = req.body;
+    const { reportId, driverId, truckId, location, district, description } = req.body;
 
     if (!location) {
       return res.status(400).json({ 
         success: false, 
         message: "Field location wajib diisi." 
+      });
+    }
+
+    if (!driverId) {
+      return res.status(400).json({
+        success: false,
+        message: "Field driverId wajib diisi saat menugaskan aduan."
+      });
+    }
+
+    if (!truckId) {
+      return res.status(400).json({
+        success: false,
+        message: "Field truckId wajib diisi saat menugaskan aduan."
       });
     }
 
@@ -41,6 +55,29 @@ export const createAduan = async (req: Request, res: Response): Promise<any> => 
     const taskNumber = `ADUAN-${dateStr}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const result = await prisma.$transaction(async (tx) => {
+      const truck = await tx.truck.findUnique({
+        where: { id: BigInt(truckId) }
+      });
+
+      if (!truck) {
+        throw new Error("Truk tidak ditemukan.");
+      }
+
+      if (truck.status === 'BUSY') {
+        throw new Error("Armada ini sedang bertugas. Pilih armada lain atau tunggu sampai selesai.");
+      }
+
+      const driverBusy = await tx.task.findFirst({
+        where: {
+          driverId: BigInt(driverId),
+          status: { not: 'SELESAI' }
+        }
+      });
+
+      if (driverBusy) {
+        throw new Error("Supir ini sedang memiliki tugas aktif. Pilih supir lain atau tunggu sampai selesai.");
+      }
+
       const newTask = await tx.task.create({
         data: {
           taskNumber,
@@ -49,10 +86,15 @@ export const createAduan = async (req: Request, res: Response): Promise<any> => 
           district: district || null,
           description: description || null,
           driverId: BigInt(driverId),
-          truckId: truckId ? BigInt(truckId) : null,
+          truckId: BigInt(truckId),
           reportId: reportId ? BigInt(reportId) : null,
           pelapor: pelaporFromReport,
         }
+      });
+
+      await tx.truck.update({
+        where: { id: BigInt(truckId) },
+        data: { status: 'BUSY' }
       });
 
       if (reportId) {
@@ -115,7 +157,7 @@ export const getSemuaPenugasan = async (req: Request, res: Response): Promise<an
       } : null,
       truck: task.truck ? { 
         ...task.truck, 
-        id: task.truck.id.toString() 
+        id: task.truck.id.  toString() 
       } : null,
       report: task.report ? { 
         ...task.report, 

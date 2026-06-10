@@ -2,6 +2,94 @@ import type { Request, Response } from 'express';
 import { prisma } from '../config/db.js';
 import * as bcrypt from 'bcrypt';
 
+// ═════════════════════════════════════════════════════════════
+// BUAT AKUN KABID
+// POST /api/admin/kabid
+// ═════════════════════════════════════════════════════════════
+export const createKabid = async (
+  req: Request,
+  res: Response
+): Promise<any> => {
+  try {
+    // Debug logging
+    console.log('📨 createKabid - Request body:', req.body);
+    console.log('📨 createKabid - Request headers:', { 
+      contentType: req.headers['content-type'],
+      hasBody: !!req.body,
+      bodyKeys: req.body ? Object.keys(req.body) : []
+    });
+
+    const {
+      email,
+      fullName,
+      password,
+      phoneNumber
+    } = req.body || {};
+
+    // Validasi
+    if (!email || !fullName || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email, nama lengkap, dan password wajib diisi',
+        received: { email, fullName, password }
+      });
+    }
+
+    // Cek email
+    const existing = await prisma.user.findUnique({
+      where: { email }
+    });
+
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: 'Email sudah terdaftar'
+      });
+    }
+
+    // Hash password
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // Buat akun KABID
+    const newKabid = await prisma.user.create({
+      data: {
+        email,
+        fullName,
+        passwordHash,
+        phoneNumber: phoneNumber || null,
+        role: 'KABID',
+        isActive: true
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        phoneNumber: true,
+        role: true,
+        isActive: true,
+        createdAt: true
+      }
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Akun Kepala Bidang berhasil dibuat',
+      data: {
+        ...newKabid,
+        id: newKabid.id.toString()
+      }
+    });
+
+  } catch (error: any) {
+    console.error('❌ createKabid:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Gagal membuat akun Kepala Bidang',
+      error: error.message
+    });
+  }
+};
 
 // ═════════════════════════════════════════════════════════════
 // GET ALL KABID
@@ -136,8 +224,75 @@ export const updateKabid = async (
       success: false,
       message: 'Gagal memperbarui akun Kepala Bidang'
     });
-  } 
+  }
 };
+
+// ═════════════════════════════════════════════════════════════
+// DELETE / NONAKTIFKAN KABID
+// DELETE /api/admin/kabid/:id
+// ═════════════════════════════════════════════════════════════
+export const deleteKabid = async (
+  req: Request,
+  res: Response
+): Promise<any> => {
+  try {
+    const { id } = req.params;
+
+    // Cari akun
+    const kabid = await prisma.user.findFirst({
+      where: {
+        id: BigInt(id),
+        role: 'KABID'
+      }
+    });
+
+    if (!kabid) {
+      return res.status(404).json({
+        success: false,
+        message: 'Akun Kepala Bidang tidak ditemukan'
+      });
+    }
+
+    try {
+      await prisma.user.delete({
+        where: {
+          id: BigInt(id)
+        }
+      });
+
+      return res.json({
+        success: true,
+        message: 'Akun Kepala Bidang berhasil dihapus permanen'
+      });
+    } catch (deleteError: any) {
+      console.warn('⚠️ deleteKabid fallback to deactivate:', deleteError?.message ?? deleteError);
+
+      // Jika ada relasi yang mencegah penghapusan permanen, gunakan soft delete sebagai fallback.
+      await prisma.user.update({
+        where: {
+          id: BigInt(id)
+        },
+        data: {
+          isActive: false
+        }
+      });
+
+      return res.json({
+        success: true,
+        message: 'Akun Kepala Bidang tidak dapat dihapus karena data terkait, akun telah dinonaktifkan sebagai gantinya'
+      });
+    }
+
+  } catch (error: any) {
+    console.error('❌ deleteKabid:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Gagal menghapus akun Kepala Bidang'
+    });
+  }
+};
+
 
 // ==========================================
 // BAGIAN 1: MANAJEMEN SUPIR (OPERATOR)
@@ -185,12 +340,28 @@ export const getSemuaSupir = async (req: Request, res: Response): Promise<any> =
   try {
     const supirList = await prisma.user.findMany({
       where: { role: 'OPERATOR' },
-      select: { id: true, fullName: true, email: true, phoneNumber: true, isActive: true }
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        phoneNumber: true,
+        isActive: true,
+        tasks: {
+          where: {
+            status: { not: 'SELESAI' }
+          },
+          select: { id: true }
+        }
+      }
     });
 
     const formattedSupir = supirList.map(supir => ({
-      ...supir,
-      id: supir.id.toString()
+      id: supir.id.toString(),
+      fullName: supir.fullName,
+      email: supir.email,
+      phoneNumber: supir.phoneNumber,
+      isActive: supir.isActive,
+      isAssigned: supir.tasks.length > 0
     }));
 
     return res.status(200).json({ success: true, data: formattedSupir });
@@ -251,6 +422,20 @@ export const deleteOperator = async (req: Request, res: Response): Promise<any> 
   const { id } = req.params;
 
   try {
+    const activeTask = await prisma.task.findFirst({
+      where: {
+        driverId: BigInt(id),
+        status: { not: 'SELESAI' }
+      }
+    });
+
+    if (activeTask) {
+      return res.status(400).json({
+        success: false,
+        message: "Gagal menghapus! Supir ini masih memiliki tugas aktif dan tidak dapat dihapus."
+      });
+    }
+
     await prisma.user.delete({
       where: { id: BigInt(id) }
     });
@@ -260,7 +445,7 @@ export const deleteOperator = async (req: Request, res: Response): Promise<any> 
     if (error.code === 'P2003') {
       return res.status(400).json({
         success: false,
-        message: "Gagal menghapus! Supir ini tidak bisa dihapus karena masih terikat dengan riwayat tugas/laporan atau truk."
+        message: "Gagal menghapus! Supir ini tidak bisa dihapus karena masih terikat dengan riwayat tugas atau data terkait."
       });
     }
     return res.status(500).json({ success: false, message: error.message });
