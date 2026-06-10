@@ -55,10 +55,10 @@ const io = new Server(server, {
 app.set("io", io);
 
 io.on("connection", (socket) => {
-  console.log("📱 Klien terhubung:", socket.id);
+  console.log("Klien terhubung:", socket.id);
 
   socket.on("disconnect", () => {
-    console.log("❌ Klien terputus:", socket.id);
+    console.log("Klien terputus:", socket.id);
   });
 });
 

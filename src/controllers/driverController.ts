@@ -1,18 +1,16 @@
 import type { Request, Response } from 'express';
-import { prisma } from '../config/db.js'; // Pastikan memanggil prisma dari config agar koneksi stabil
+import { prisma } from '../config/db.js'; 
 
 // 1. Mengambil Daftar Laporan Baru yang belum ditugaskan (Bisa dipakai jika Supir boleh "Ambil Tugas" sendiri)
 export const getAvailableTasks = async (req: Request, res: Response): Promise<any> => {
   try {
-    // Di schema baru, laporan yang belum ditugaskan berarti statusnya 'PENDING'
-    // dan belum memiliki relasi di tabel Task
     const reports = await prisma.report.findMany({
       where: {
         status: 'PENDING',
         task: null, // Memastikan belum ada task (penugasan) yang dibuat untuk laporan ini
       },
       orderBy: {
-        createdAt: 'desc', // Urutkan dari yang terbaru
+        createdAt: 'desc', 
       },
     });
 
@@ -58,17 +56,13 @@ export const toggleDriverStatus = async (req: Request, res: Response): Promise<a
   }
 };
 
-// 3. 🔥 TAMBAHAN BARU: Mengambil tugas khusus untuk supir yang sedang login (Dashboard Supir)
+// 3. TAMBAHAN BARU: Mengambil tugas khusus untuk supir yang sedang login (Dashboard Supir)
 export const getDriverTasks = async (req: Request, res: Response): Promise<any> => {
   try {
     const { driverId } = req.params;
-
-    // Cari semua tugas (Rutin & Aduan) milik supir ini, urutkan dari jadwal terdekat
     const tasks = await prisma.task.findMany({
       where: { 
         driverId: BigInt(driverId),
-        // Opsional: Jika kamu ingin menyembunyikan tugas yang sudah selesai dari layar utama HP supir
-        // status: { not: 'SELESAI' }
       },
       include: {
         truck: { select: { plateNumber: true } },

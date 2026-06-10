@@ -1,10 +1,9 @@
 import type { Request, Response } from 'express';
 import { prisma } from '../config/db.js';
 
-// Buat Tugas Aduan
 export const createAduan = async (req: Request, res: Response): Promise<any> => {
   try {
-    const { reportId, driverId, truckId, scheduledAt, location, district, description, notes } = req.body;
+    const { reportId, driverId, truckId, location, district, description} = req.body;
 
     if (!location) {
       return res.status(400).json({ 
@@ -49,12 +48,10 @@ export const createAduan = async (req: Request, res: Response): Promise<any> => 
           location,
           district: district || null,
           description: description || null,
-          notes: notes || null,
-          scheduledAt: new Date(scheduledAt),
           driverId: BigInt(driverId),
           truckId: truckId ? BigInt(truckId) : null,
           reportId: reportId ? BigInt(reportId) : null,
-          pelapor: pelaporFromReport, // 🔥 FIELD PELAPOR
+          pelapor: pelaporFromReport,
         }
       });
 
@@ -94,15 +91,15 @@ export const getSemuaPenugasan = async (req: Request, res: Response): Promise<an
     if (type) whereClause.type = type;
     if (status) whereClause.status = status;
 
-    const tasks = await prisma.task.findMany({
-      where: whereClause,
-      include: {
-        driver: { select: { id: true, fullName: true } },
-        truck: { select: { id: true, plateNumber: true } },
-        report: { select: { id: true, description: true, pelapor: true } }
-      },
-      orderBy: { scheduledAt: 'desc' }
-    });
+ const tasks = await prisma.task.findMany({
+  where: whereClause,
+  include: {
+    driver: { select: { id: true, fullName: true } },
+    truck: { select: { id: true, plateNumber: true } },
+    report: { select: { id: true, description: true, pelapor: true } }
+  },
+  orderBy: { createdAt: 'desc' }  // ✅ Ganti dengan createdAt
+});
 
     const formattedTasks = tasks.map(task => ({
       ...task,
@@ -112,8 +109,8 @@ export const getSemuaPenugasan = async (req: Request, res: Response): Promise<an
       reportId: task.reportId?.toString() || null,
       assignerId: task.assignerId?.toString() || null,
       pelapor: task.pelapor || task.report?.pelapor || null, // 🔥 PRIORITASKAN DARI TASK
-      driver: task.driver ? { 
-        ...task.driver, 
+      driver: task.driver ? {
+        ...task.driver,
         id: task.driver.id.toString() 
       } : null,
       truck: task.truck ? { 

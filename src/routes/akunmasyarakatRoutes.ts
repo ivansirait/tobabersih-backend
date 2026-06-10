@@ -2,21 +2,25 @@ import express from "express";
 import {
   getUsers,
   createUser,
-  bulkCreateUsers, // Import bulk function
+  bulkCreateUsers,
   updateUser,
   deleteUser,
-  exportUsers
+  exportUsers,
+  exportUsersByDriver,
 } from "../controllers/akunmasyarakatController.js";
 import { authenticateToken } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// Semua rute memerlukan authentication
+// ⚠️ PENTING: route statis harus di atas route dinamis /:id
+// Kalau /export ditaruh setelah /:id, Express akan baca "export" sebagai id
+router.get("/export", authenticateToken, exportUsers);
+router.get("/export/driver/:driverId", authenticateToken, exportUsersByDriver);
+router.post("/bulk", authenticateToken, bulkCreateUsers);
+
 router.get("/", authenticateToken, getUsers);
 router.post("/", authenticateToken, createUser);
-router.post("/bulk", authenticateToken, bulkCreateUsers); // Tambahkan bulk endpoint
 router.put("/:id", authenticateToken, updateUser);
 router.delete("/:id", authenticateToken, deleteUser);
-router.get("/export", authenticateToken, exportUsers); // Tambahkan export endpoint
 
 export default router;

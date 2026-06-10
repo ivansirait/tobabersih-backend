@@ -2,94 +2,6 @@ import type { Request, Response } from 'express';
 import { prisma } from '../config/db.js';
 import * as bcrypt from 'bcrypt';
 
-// ═════════════════════════════════════════════════════════════
-// BUAT AKUN KABID
-// POST /api/admin/kabid
-// ═════════════════════════════════════════════════════════════
-export const createKabid = async (
-  req: Request,
-  res: Response
-): Promise<any> => {
-  try {
-    // Debug logging
-    console.log('📨 createKabid - Request body:', req.body);
-    console.log('📨 createKabid - Request headers:', { 
-      contentType: req.headers['content-type'],
-      hasBody: !!req.body,
-      bodyKeys: req.body ? Object.keys(req.body) : []
-    });
-
-    const {
-      email,
-      fullName,
-      password,
-      phoneNumber
-    } = req.body || {};
-
-    // Validasi
-    if (!email || !fullName || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email, nama lengkap, dan password wajib diisi',
-        received: { email, fullName, password }
-      });
-    }
-
-    // Cek email
-    const existing = await prisma.user.findUnique({
-      where: { email }
-    });
-
-    if (existing) {
-      return res.status(409).json({
-        success: false,
-        message: 'Email sudah terdaftar'
-      });
-    }
-
-    // Hash password
-    const passwordHash = await bcrypt.hash(password, 10);
-
-    // Buat akun KABID
-    const newKabid = await prisma.user.create({
-      data: {
-        email,
-        fullName,
-        passwordHash,
-        phoneNumber: phoneNumber || null,
-        role: 'KABID',
-        isActive: true
-      },
-      select: {
-        id: true,
-        email: true,
-        fullName: true,
-        phoneNumber: true,
-        role: true,
-        isActive: true,
-        createdAt: true
-      }
-    });
-
-    return res.status(201).json({
-      success: true,
-      message: 'Akun Kepala Bidang berhasil dibuat',
-      data: {
-        ...newKabid,
-        id: newKabid.id.toString()
-      }
-    });
-
-  } catch (error: any) {
-    console.error('❌ createKabid:', error);
-
-    return res.status(500).json({
-      success: false,
-      message: 'Gagal membuat akun Kepala Bidang',
-      error: error.message
-    });
-  }
-};
 
 // ═════════════════════════════════════════════════════════════
 // GET ALL KABID
@@ -224,60 +136,8 @@ export const updateKabid = async (
       success: false,
       message: 'Gagal memperbarui akun Kepala Bidang'
     });
-  }
+  } 
 };
-
-// ═════════════════════════════════════════════════════════════
-// DELETE / NONAKTIFKAN KABID
-// DELETE /api/admin/kabid/:id
-// ═════════════════════════════════════════════════════════════
-export const deleteKabid = async (
-  req: Request,
-  res: Response
-): Promise<any> => {
-  try {
-    const { id } = req.params;
-
-    // Cari akun
-    const kabid = await prisma.user.findFirst({
-      where: {
-        id: BigInt(id),
-        role: 'KABID'
-      }
-    });
-
-    if (!kabid) {
-      return res.status(404).json({
-        success: false,
-        message: 'Akun Kepala Bidang tidak ditemukan'
-      });
-    }
-
-    // Soft delete
-    await prisma.user.update({
-      where: {
-        id: BigInt(id)
-      },
-      data: {
-        isActive: false
-      }
-    });
-
-    return res.json({
-      success: true,
-      message: 'Akun Kepala Bidang berhasil dinonaktifkan'
-    });
-
-  } catch (error: any) {
-    console.error('❌ deleteKabid:', error);
-
-    return res.status(500).json({
-      success: false,
-      message: 'Gagal menonaktifkan akun Kepala Bidang'
-    });
-  }
-};
-
 
 // ==========================================
 // BAGIAN 1: MANAJEMEN SUPIR (OPERATOR)
@@ -356,6 +216,7 @@ export const updateOperator = async (req: Request, res: Response): Promise<any> 
       }
     }
 
+  
     const dataUpdate: any = {
       fullName,
       email,
@@ -452,7 +313,8 @@ export const getSemuaTruk = async (req: Request, res: Response): Promise<any> =>
       ...truk,
       id: truk.id.toString(),
       operatorId: truk.operatorId ? truk.operatorId.toString() : null,
-      operator: truk.operator ? { ...truk.operator, id: truk.operator.id.toString() } : null
+      operator: truk.operator ? { ...truk.operator, id: truk.operator.id.toString() } : null,
+      lastLocation: truk.lastLocation ?? null
     }));
 
     return res.status(200).json({ success: true, data: formattedTruk });
@@ -467,17 +329,17 @@ export const addTruk = async (req: Request, res: Response): Promise<any> => {
     const existingTruk = await prisma.truck.findUnique({ where: { plateNumber } });
     if (existingTruk) return res.status(400).json({ success: false, message: "Plat nomor ini sudah terdaftar!" });
 
-await prisma.truck.create({
-  data: {
-    plateNumber,
-    unitCode,
-    brand,
-    truckType,
-    status: status || 'AVAILABLE',
-    lastLocation: lastLocation || '',
-    operatorId: operatorId ? BigInt(operatorId) : null
-  }
-});
+    await prisma.truck.create({
+      data: {
+        plateNumber,
+        unitCode,
+        brand,
+        truckType,
+        status: status || 'AVAILABLE',
+        lastLocation: lastLocation || '',
+        operatorId: operatorId ? BigInt(operatorId) : null
+      }
+    });
 
     return res.status(201).json({ success: true, message: "Truk berhasil didaftarkan" });
   } catch (error: any) {
@@ -494,7 +356,7 @@ export const updateTruk = async (req: Request, res: Response): Promise<any> => {
       data: {
         plateNumber,
         status,
-        lastLocation,
+        lastLocation: lastLocation,
         operatorId: operatorId ? BigInt(operatorId) : null
       }
     });

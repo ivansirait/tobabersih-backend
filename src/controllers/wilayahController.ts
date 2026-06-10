@@ -169,7 +169,6 @@ export const createWilayah = async (req: Request, res: Response) => {
         code: code?.trim() || null,
         population: parseOptionalInt(population),
         address: address || null,
-        capacityVolume: parseOptionalInt(capacityVolume),
         latitude: pLat,
         longitude: pLon,
         radius: parseOptionalInt(radius) || 5000,

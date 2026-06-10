@@ -10,13 +10,9 @@ import {
   addTruk,
   updateTruk,
   deleteTruk,
-  // getTrukAktif,
-  // getRiwayatJalur,
-  // updateLokasiTruk,
-  createKabid,
+
   getAllKabid,
   updateKabid,
-  deleteKabid,
 } from '../controllers/adminController.js';
 
 
@@ -38,15 +34,8 @@ router.delete('/truks/:id', authenticateToken, deleteTruk);
 // --- Rute Penugasan ---
 router.patch('/laporan/:idLaporan/tugaskan', authenticateToken, tugaskanLaporan);
 
-// --- Rute Tracking ---
-// router.get('/tracking/truk-aktif', authenticateToken, getTrukAktif);
-// router.get('/tracking/riwayat/:truckId', authenticateToken, getRiwayatJalur);
-// router.post('/tracking/update-lokasi', updateLokasiTruk); // tanpa auth, dipanggil dari Flutter
-
 // --- Manajemen Kepala Bidang (KABID) – hanya ADMIN ---
 router.get('/kabid', authenticateToken, authorizeAdmin, getAllKabid);
-router.post('/kabid', authenticateToken, authorizeAdmin, createKabid);
-router.put('/kabid/:id', authenticateToken, authorizeAdmin, updateKabid);
-router.delete('/kabid/:id', authenticateToken, authorizeAdmin, deleteKabid);
+router.put('/kabid', authenticateToken, authorizeAdmin, updateKabid);
 
 export default router;

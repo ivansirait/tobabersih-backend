@@ -22,29 +22,36 @@ model User {
   updatedAt     DateTime       @default(now()) @updatedAt @map("updated_at")
   isActive      Boolean        @default(true)
   fcm_token     String?
+  driverId      BigInt?        @map("driver_id")
+  jenisUsaha    String?        @default("Rumah Tangga") @map("jenis_usaha")
   notifications Notification[]
   posts         Post[]
   reports       Report[]
   assigned      Task[]         @relation("TaskAssigner")
   tasks         Task[]         @relation("TaskDriver")
   trucks        Truck[]
+  driver        User?          @relation("DriverPelanggan", fields: [driverId], references: [id])
+  pelanggan     User[]         @relation("DriverPelanggan")
 
   @@map("users")
 }
 
 model Location {
-  id             BigInt                    @id @default(autoincrement())
-  name           String
-  locationType   String                    @map("location_type")
-  isActive       Boolean                   @default(true) @map("is_active")
-  code           String?                   @unique
-  latitude       Decimal                   @db.Decimal(10, 8)
-  longitude      Decimal                   @db.Decimal(11, 8)
-  address        String?
-  createdAt      DateTime                  @default(now()) @map("created_at")
-  updatedAt      DateTime                  @default(now()) @map("updated_at")
-  radius         Int?
-  routesStart    Route[]                   @relation("StartLocation")
+  id              BigInt                    @id @default(autoincrement())
+  name            String
+  locationType    String                    @map("location_type")
+  isActive        Boolean                   @default(true) @map("is_active")
+  code            String?                   @unique
+  latitude        Decimal                   @db.Decimal(10, 8)
+  longitude       Decimal                   @db.Decimal(11, 8)
+  address         String?
+  createdAt       DateTime                  @default(now()) @map("created_at")
+  updatedAt       DateTime                  @default(now()) @map("updated_at")
+  radius          Int?
+  capacity_volume Int?
+  geom            Unsupported("geography")?
+  population      Int?
+  routesStart     Route[]                   @relation("StartLocation")
 
   @@map("locations")
 }
@@ -75,13 +82,13 @@ model Truck {
   currentLat      Decimal?          @map("current_lat") @db.Decimal(10, 8)
   currentLong     Decimal?          @map("current_long") @db.Decimal(11, 8)
   lastPing        DateTime?         @map("last_ping")
-  lastLocation    String?           @map("last_location")
   createdAt       DateTime          @default(now()) @map("created_at")
   updatedAt       DateTime          @default(now()) @map("updated_at")
   status          TruckStatus       @default(AVAILABLE)
   brand           String?
   truckType       String?           @map("truck_type")
   unitCode        String?           @map("unit_code")
+  lastLocation    String?           @map("last_location")
   locationHistory LocationHistory[]
   routesTemplate  RouteTemplate[]
   routes          Route[]
@@ -160,7 +167,6 @@ model Post {
   @@map("posts")
 }
 
-
 model Notification {
   id        BigInt   @id @default(autoincrement())
   userId    BigInt   @map("user_id")
@@ -174,32 +180,32 @@ model Notification {
 }
 
 model Task {
-  id          BigInt      @id @default(autoincrement())
-  taskNumber  String      @unique @map("task_number")
-  type        String
-  status      TaskStatus  @default(DITUGASKAN)
-  driverId    BigInt?     @map("driver_id")
-  truckId     BigInt?     @map("truck_id")
-  assignerId  BigInt?     @map("assigner_id")
-  reportId    BigInt?     @unique @map("report_id")
-  location    String
-  latitude    Decimal?    @db.Decimal(10, 8)
-  longitude   Decimal?    @db.Decimal(11, 8)
-  district    String?
-  description String?
-  scheduledAt DateTime    @map("scheduled_at")
-  startedAt   DateTime?   @map("started_at")
-  completedAt DateTime?   @map("completed_at")
-  volumeKg    Decimal?    @map("volume_kg") @db.Decimal(10, 2)
-  createdAt   DateTime    @default(now()) @map("created_at")
-  updatedAt   DateTime    @updatedAt @map("updated_at")
-  notes       String?
-  pelapor     String?
-  photos      TaskPhoto[]
-  assigner    User?       @relation("TaskAssigner", fields: [assignerId], references: [id])
-  driver      User?       @relation("TaskDriver", fields: [driverId], references: [id])
-  report      Report?     @relation(fields: [reportId], references: [id])
-  truck       Truck?      @relation(fields: [truckId], references: [id])
+  id           BigInt      @id @default(autoincrement())
+  taskNumber   String      @unique @map("task_number")
+  type         String
+  status       TaskStatus  @default(DITUGASKAN)
+  driverId     BigInt?     @map("driver_id")
+  truckId      BigInt?     @map("truck_id")
+  assignerId   BigInt?     @map("assigner_id")
+  reportId     BigInt?     @unique @map("report_id")
+  location     String
+  latitude     Decimal?    @db.Decimal(10, 8)
+  longitude    Decimal?    @db.Decimal(11, 8)
+  district     String?
+  description  String?
+  startedAt    DateTime?   @map("started_at")
+  completedAt  DateTime?   @map("completed_at")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+  pelapor      String?
+  notes        String?
+  scheduled_at DateTime    @default(now())
+  volume_kg    Decimal?    @db.Decimal(10, 2)
+  photos       TaskPhoto[]
+  assigner     User?       @relation("TaskAssigner", fields: [assignerId], references: [id])
+  driver       User?       @relation("TaskDriver", fields: [driverId], references: [id])
+  report       Report?     @relation(fields: [reportId], references: [id])
+  truck        Truck?      @relation(fields: [truckId], references: [id])
 
   @@map("tasks")
 }
@@ -255,6 +261,7 @@ enum ReportStatus {
   PENDING
   DITINDAKLANJUTI
   SELESAI
+  DITOLAK
 }
 
 enum TruckStatus {

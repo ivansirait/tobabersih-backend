@@ -1,228 +1,164 @@
-import { prisma, supabase } from "../config/db.js";
-import * as XLSX from 'xlsx';
+import { prisma } from "../config/db.js";
+import * as XLSX from "xlsx";
 
-// Fungsi untuk mengenerate email default
-const generateEmail = (fullName: string) => {
-  if (!fullName) return "";
-  // Hapus spasi, ubah ke lowercase, tambah @gmail.com
-  const name = fullName.toLowerCase().replace(/\s+/g, "");
-  return `${name}@gmail.com`;
-};
+// ─── Helper ────────────────────────────────────────────────────────────────
 
-// Fungsi validasi email
-const isValidEmail = (email: string): boolean => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-};
-
-// Fungsi validasi nomor telepon
-const isValidPhoneNumber = (phone: string): boolean => {
-  // Hanya boleh berisi angka, spasi, +, -, (, ), dan *
-  const phoneRegex = /^[\d\s+\-()*]+$/;
-  return phoneRegex.test(phone) && phone.replace(/\s+/g, '').length >= 10;
-};
-
-// Helper function untuk sanitasi user response
-const sanitizeUser = (user) => {
-  const { passwordHash, ...userWithoutPassword } = user;
+const sanitizeUser = (user: any) => {
+  const { passwordHash, ...rest } = user;
   return {
-    ...userWithoutPassword,
-    id: user.id.toString(), // Konversi BigInt ke string
-    region: user.region || "", // Default empty string
+    ...rest,
+    id: user.id.toString(),
+    region: user.region ?? "",
+    driverName: user.driver?.fullName ?? null,
   };
 };
 
-// GET USERS
-export const getUsers = async (req, res) => {
+// ─── GET USERS (dengan pagination & filter supir) ──────────────────────────
+
+export const getUsers = async (req: any, res: any) => {
   try {
-    const users = await prisma.user.findMany({
-      where: { role: "WARGA" },
-      orderBy: { createdAt: "desc" },
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = parseInt(req.query.limit as string) || 12;
+    const skip = (page - 1) * limit;
+    const search = (req.query.search as string) ?? "";
+    const driverId = req.query.driverId as string;
+
+    const where: any = {
+      role: "WARGA",
+      ...(driverId ? { driverId: BigInt(driverId) } : {}),
+      ...(search
+        ? {
+            OR: [
+              { fullName: { contains: search, mode: "insensitive" } },
+              { region: { contains: search, mode: "insensitive" } },
+              { jenisUsaha: { contains: search, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    };
+
+    const [users, total] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        include: { driver: { select: { id: true, fullName: true } } },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      prisma.user.count({ where }),
+    ]);
+
+    res.json({
+      success: true,
+      data: users.map(sanitizeUser),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     });
-
-    const sanitizedUsers = users.map(sanitizeUser);
-
-    res.json({ success: true, data: sanitizedUsers });
-  } catch (error) {
+  } catch (error: any) {
     console.error("GET USERS ERROR:", error);
     res.status(500).json({ success: false, message: "Gagal ambil data" });
   }
 };
 
-// CREATE USER
-export const createUser = async (req, res) => {
+// ─── GET DRIVERS (untuk dropdown filter) ───────────────────────────────────
+
+export const getDrivers = async (_req: any, res: any) => {
   try {
-    const { fullName, email, phoneNumber, password, role, region } = req.body;
-
-    console.log("Request body:", req.body);
-
-    // Validasi
-    if (!fullName) {
-      return res.status(400).json({
-        success: false,
-        message: "Nama lengkap wajib diisi",
-      });
-    }
-
-    // Generate email jika kosong
-    const finalEmail = email || generateEmail(fullName);
-
-    // Validasi format email jika tidak kosong
-    if (email && !isValidEmail(email)) {
-      return res.status(400).json({
-        success: false,
-        message: "Format email tidak valid. Contoh: email@contoh.com",
-      });
-    }
-
-    // Validasi format nomor telepon jika ada
-    if (phoneNumber && !isValidPhoneNumber(phoneNumber)) {
-      return res.status(400).json({
-        success: false,
-        message: "Nomor telepon hanya boleh berisi angka dan simbol + - ( )",
-      });
-    }
-
-    // Cek email duplikat
-    const existingUser = await prisma.user.findUnique({
-      where: { email: finalEmail }
+    const drivers = await prisma.user.findMany({
+      where: { role: "OPERATOR" },
+      select: { id: true, fullName: true },
+      orderBy: { fullName: "asc" },
     });
+    res.json({
+      success: true,
+      data: drivers.map((d) => ({ id: d.id.toString(), fullName: d.fullName })),
+    });
+  } catch (error: any) {
+    console.error("GET DRIVERS ERROR:", error);
+    res.status(500).json({ success: false, message: "Gagal ambil data supir" });
+  }
+};
 
-    if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: "Email sudah terdaftar di sistem. Silakan gunakan email lain.",
-      });
+// ─── CREATE USER ────────────────────────────────────────────────────────────
+
+export const createUser = async (req: any, res: any) => {
+  try {
+    const { fullName, phoneNumber, region, jenisUsaha, driverId } = req.body;
+
+    if (!fullName?.trim()) {
+      return res.status(400).json({ success: false, message: "Nama lengkap wajib diisi" });
     }
 
     const user = await prisma.user.create({
       data: {
-        fullName,
-        email: finalEmail,
-        passwordHash: password || "Warga123!",
-        phoneNumber: phoneNumber || null,
-        role: role || "WARGA",
+        fullName: fullName.trim(),
+        email: `warga_${Date.now()}@internal.local`, // dummy, tidak ditampilkan
+        passwordHash: "internal",
+        phoneNumber: phoneNumber?.trim() || null,
+        region: region?.trim() || "",
+        jenisUsaha: jenisUsaha?.trim() || "Rumah Tangga",
+        role: "WARGA",
         isActive: true,
-        region: region || "", // Tambahkan field region jika ada di schema
+        ...(driverId ? { driverId: BigInt(driverId) } : {}),
       },
+      include: { driver: { select: { id: true, fullName: true } } },
     });
 
     res.json({ success: true, data: sanitizeUser(user) });
-  } catch (error) {
+  } catch (error: any) {
     console.error("CREATE USER ERROR:", error);
-    res.status(500).json({ 
-      success: false, 
-      message: "Gagal tambah user", 
-      error: error.message 
-    });
+    res.status(500).json({ success: false, message: "Gagal tambah pelanggan", error: error.message });
   }
 };
 
-// BULK CREATE USERS (Import Excel)
-export const bulkCreateUsers = async (req, res) => {
+// ─── BULK CREATE (Import Excel) ─────────────────────────────────────────────
+
+export const bulkCreateUsers = async (req: any, res: any) => {
   try {
-    const { users } = req.body;
+    const { users, driverId } = req.body;
 
-    if (!users || !Array.isArray(users) || users.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Data users tidak valid atau kosong",
-      });
+    if (!Array.isArray(users) || users.length === 0) {
+      return res.status(400).json({ success: false, message: "Data tidak valid atau kosong" });
     }
-
     if (users.length > 500) {
-      return res.status(400).json({
-        success: false,
-        message: "Maksimal 500 user per import",
-      });
+      return res.status(400).json({ success: false, message: "Maksimal 500 baris per import" });
     }
 
-    const results = [];
+    const results: { nama: string; status: string; message: string }[] = [];
     let successCount = 0;
     let errorCount = 0;
 
-    // Proses setiap user secara berurutan untuk validasi email unik
-    for (const userData of users) {
-      const { fullName, email, phoneNumber, password, region } = userData;
+    for (const row of users) {
+      const { fullName, phoneNumber, region, jenisUsaha } = row;
+
+      if (!fullName?.trim()) {
+        results.push({ nama: fullName || "kosong", status: "error", message: "Nama wajib diisi" });
+        errorCount++;
+        continue;
+      }
 
       try {
-        // Validasi per baris
-        if (!fullName) {
-          results.push({
-            email: email || "unknown",
-            status: "error",
-            message: "Nama lengkap wajib diisi",
-          });
-          errorCount++;
-          continue;
-        }
-
-        // Validasi format email jika tidak kosong
-        if (email && !isValidEmail(email)) {
-          results.push({
-            email,
-            status: "error",
-            message: "Format email tidak valid. Contoh: email@contoh.com",
-          });
-          errorCount++;
-          continue;
-        }
-
-        // Validasi format nomor telepon jika ada
-        if (phoneNumber && !isValidPhoneNumber(phoneNumber)) {
-          results.push({
-            email: email || "unknown",
-            status: "error",
-            message: "Nomor telepon hanya boleh berisi angka dan simbol + - ( )",
-          });
-          errorCount++;
-          continue;
-        }
-
-        // Generate email jika kosong
-        const finalEmail = email || generateEmail(fullName);
-
-        // Cek email duplikat di database
-        const existingUser = await prisma.user.findUnique({
-          where: { email: finalEmail },
-        });
-
-        if (existingUser) {
-          results.push({
-            email: finalEmail,
-            status: "error",
-            message: "Email sudah terdaftar di sistem. Silakan gunakan email lain.",
-          });
-          errorCount++;
-          continue;
-        }
-
-        // Buat user baru
         await prisma.user.create({
           data: {
-            fullName,
-            email: finalEmail,
-            passwordHash: password || "Warga123!",
-            phoneNumber: phoneNumber || null,
+            fullName: fullName.trim(),
+            email: `warga_${Date.now()}_${Math.random().toString(36).slice(2)}@internal.local`,
+            passwordHash: "internal",
+            phoneNumber: phoneNumber?.trim() || null,
+            region: region?.trim() || "",
+            jenisUsaha: jenisUsaha?.trim() || "Rumah Tangga",
             role: "WARGA",
             isActive: true,
-            region: region || "",
+            ...(driverId ? { driverId: BigInt(driverId) } : {}),
           },
         });
-
-        results.push({
-          email: finalEmail,
-          status: "success",
-          message: "Berhasil didaftarkan",
-        });
+        results.push({ nama: fullName.trim(), status: "success", message: "Berhasil didaftarkan" });
         successCount++;
-      } catch (err) {
-        console.error(`Bulk create error for ${email}:`, err);
-        results.push({
-          email: email || "unknown",
-          status: "error",
-          message: err.message || "Gagal mendaftarkan user",
-        });
+      } catch (err: any) {
+        results.push({ nama: fullName.trim(), status: "error", message: err.message || "Gagal" });
         errorCount++;
       }
     }
@@ -230,190 +166,160 @@ export const bulkCreateUsers = async (req, res) => {
     res.json({
       success: true,
       message: `Import selesai: ${successCount} berhasil, ${errorCount} gagal`,
-      summary: {
-        total: users.length,
-        success: successCount,
-        error: errorCount,
-      },
+      summary: { total: users.length, success: successCount, error: errorCount },
       results,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("BULK CREATE ERROR:", error);
-    res.status(500).json({
-      success: false,
-      message: "Gagal melakukan import data",
-      error: error.message,
-    });
+    res.status(500).json({ success: false, message: "Gagal import data", error: error.message });
   }
 };
 
-// UPDATE USER
-export const updateUser = async (req, res) => {
+// ─── UPDATE USER ────────────────────────────────────────────────────────────
+
+export const updateUser = async (req: any, res: any) => {
   try {
     const { id } = req.params;
-    const { fullName, email, phoneNumber, region, password } = req.body;
+    const { fullName, phoneNumber, region, jenisUsaha, driverId } = req.body;
 
-    if (!id) {
-      return res.status(400).json({
-        success: false,
-        message: "ID tidak valid",
-      });
-    }
-
-    // Cek apakah user ada
-    const existingUserCheck = await prisma.user.findUnique({
-      where: { id: BigInt(id) }
-    });
-
-    if (!existingUserCheck) {
-      return res.status(404).json({
-        success: false,
-        message: "User tidak ditemukan",
-      });
-    }
-
-    // Cek email duplikat (kecuali user sendiri)
-    if (email) {
-      const emailUser = await prisma.user.findFirst({
-        where: {
-          email,
-          NOT: { id: BigInt(id) }
-        }
-      });
-
-      if (emailUser) {
-        return res.status(400).json({
-          success: false,
-          message: "Email sudah terdaftar oleh user lain",
-        });
-      }
-    }
-
-    // Prepare update data
-    const updateData = {
-      fullName: fullName || existingUserCheck.fullName,
-      email: email || existingUserCheck.email,
-      phoneNumber: phoneNumber !== undefined ? phoneNumber : existingUserCheck.phoneNumber,
-      region: region !== undefined ? region : existingUserCheck.region,
-    };
-
-    // If password provided, update it
-    if (password && password.trim()) {
-      updateData.passwordHash = password.trim();
+    const existing = await prisma.user.findUnique({ where: { id: BigInt(id) } });
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Pelanggan tidak ditemukan" });
     }
 
     const user = await prisma.user.update({
       where: { id: BigInt(id) },
-      data: updateData,
+      data: {
+        fullName: fullName?.trim() || existing.fullName,
+        phoneNumber: phoneNumber !== undefined ? phoneNumber?.trim() || null : existing.phoneNumber,
+        region: region !== undefined ? region?.trim() || "" : existing.region,
+        jenisUsaha: jenisUsaha !== undefined ? jenisUsaha?.trim() : existing.jenisUsaha,
+        driverId: driverId !== undefined ? (driverId ? BigInt(driverId) : null) : existing.driverId,
+      },
+      include: { driver: { select: { id: true, fullName: true } } },
     });
 
     res.json({ success: true, data: sanitizeUser(user) });
-  } catch (error) {
+  } catch (error: any) {
     console.error("UPDATE ERROR:", error);
-    res.status(500).json({ 
-      success: false, 
-      message: "Gagal update user",
-      error: error.message 
-    });
+    res.status(500).json({ success: false, message: "Gagal update pelanggan", error: error.message });
   }
 };
 
-// DELETE USER
-export const deleteUser = async (req, res) => {
+// ─── DELETE USER ────────────────────────────────────────────────────────────
+
+export const deleteUser = async (req: any, res: any) => {
   try {
     const { id } = req.params;
-
-    if (!id) {
-      return res.status(400).json({
-        success: false,
-        message: "ID tidak valid",
-      });
+    const existing = await prisma.user.findUnique({ where: { id: BigInt(id) } });
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Pelanggan tidak ditemukan" });
     }
-
-    // Cek apakah user ada
-    const existingUser = await prisma.user.findUnique({
-      where: { id: BigInt(id) }
-    });
-
-    if (!existingUser) {
-      return res.status(404).json({
-        success: false,
-        message: "User tidak ditemukan",
-      });
-    }
-
-    const deletedUser = await prisma.user.delete({
-      where: { id: BigInt(id) },
-    });
-
-    res.json({ 
-      success: true, 
-      data: sanitizeUser(deletedUser), 
-      message: "Akun berhasil dihapus" 
-    });
-  } catch (error) {
+    await prisma.user.delete({ where: { id: BigInt(id) } });
+    res.json({ success: true, message: "Pelanggan berhasil dihapus" });
+  } catch (error: any) {
     console.error("DELETE ERROR:", error);
-    res.status(500).json({
-      success: false,
-      message: "Gagal hapus user",
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: "Gagal hapus pelanggan", error: error.message });
   }
 };
 
-// EXPORT USERS
-export const exportUsers = async (req, res) => {
+// ─── Helper: build worksheet dari data users ────────────────────────────────
+
+const buildWorksheet = (users: any[]) => {
+  const rows = users.map((u, i) => ({
+    No: i + 1,
+    "Nama Pelanggan": u.fullName,
+    Alamat: u.region || "",
+    "Jenis Usaha": u.jenisUsaha || "Rumah Tangga",
+    "No. Telepon": u.phoneNumber || "",
+    Supir: u.driver?.fullName || "",
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws["!cols"] = [
+    { wch: 5 },
+    { wch: 28 },
+    { wch: 30 },
+    { wch: 20 },
+    { wch: 16 },
+    { wch: 20 },
+  ];
+  return ws;
+};
+
+// ─── EXPORT ALL ─────────────────────────────────────────────────────────────
+
+export const exportUsers = async (_req: any, res: any) => {
   try {
     const users = await prisma.user.findMany({
       where: { role: "WARGA" },
+      include: { driver: { select: { id: true, fullName: true } } },
       orderBy: { createdAt: "desc" },
     });
 
-    const exportData = users.map(user => ({
-      "Nama Lengkap": user.fullName,
-      "Email": user.email,
-      "Nomor Telepon": user.phoneNumber || "",
-      "Wilayah": user.region || "",
-      "Status": user.isActive ? "Aktif" : "Nonaktif",
-      "Tanggal Dibuat": user.createdAt.toLocaleDateString("id-ID"),
-    }));
-
-    // Create worksheet
-    const ws = XLSX.utils.json_to_sheet(exportData);
-
-    // Set column widths
-    ws["!cols"] = [
-      { wch: 20 }, // Nama Lengkap
-      { wch: 30 }, // Email
-      { wch: 15 }, // Nomor Telepon
-      { wch: 20 }, // Wilayah
-      { wch: 10 }, // Status
-      { wch: 15 }, // Tanggal Dibuat
-    ];
-
-    // Create workbook
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Akun Masyarakat");
 
-    // Send response
+    // Sheet 1: semua pelanggan
+    XLSX.utils.book_append_sheet(wb, buildWorksheet(users), "Semua Pelanggan");
+
+    // Sheet per supir
+    const byDriver = users.reduce<Record<string, any[]>>((acc, u) => {
+      const key = u.driver?.fullName ?? "Tanpa Supir";
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(u);
+      return acc;
+    }, {});
+
+    for (const [driverName, driverUsers] of Object.entries(byDriver)) {
+      const sheetName = `Supir ${driverName}`.slice(0, 31); // Excel max 31 char
+      XLSX.utils.book_append_sheet(wb, buildWorksheet(driverUsers), sheetName);
+    }
+
     const buffer = XLSX.write(wb, { bookType: "xlsx", type: "buffer" });
+    const filename = `pelanggan_retribusi_${new Date().toISOString().split("T")[0]}.xlsx`;
 
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename=akun_masyarakat_${new Date().toISOString().split("T")[0]}.xlsx`
-    );
-    res.setHeader(
-      "Content-Type",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    );
-
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.send(buffer);
-  } catch (error) {
+  } catch (error: any) {
     console.error("EXPORT ERROR:", error);
-    res.status(500).json({
-      success: false,
-      message: "Gagal export data",
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: "Gagal export data", error: error.message });
   }
-}
+};
+
+// ─── EXPORT BY DRIVER ───────────────────────────────────────────────────────
+
+export const exportUsersByDriver = async (req: any, res: any) => {
+  try {
+    const { driverId } = req.params;
+
+    const driver = await prisma.user.findUnique({
+      where: { id: BigInt(driverId) },
+      select: { fullName: true },
+    });
+
+    if (!driver) {
+      return res.status(404).json({ success: false, message: "Supir tidak ditemukan" });
+    }
+
+    const users = await prisma.user.findMany({
+      where: { role: "WARGA", driverId: BigInt(driverId) },
+      include: { driver: { select: { id: true, fullName: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, buildWorksheet(users), `Supir ${driver.fullName}`.slice(0, 31));
+
+    const buffer = XLSX.write(wb, { bookType: "xlsx", type: "buffer" });
+    const driverSlug = driver.fullName.toLowerCase().replace(/\s+/g, "_");
+    const filename = `pelanggan_${driverSlug}_${new Date().toISOString().split("T")[0]}.xlsx`;
+
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.send(buffer);
+  } catch (error: any) {
+    console.error("EXPORT BY DRIVER ERROR:", error);
+    res.status(500).json({ success: false, message: "Gagal export data supir", error: error.message });
+  }
+};

@@ -12,7 +12,7 @@ router.get('/truk-aktif', trackingController.getTrukAktif);
 router.get('/riwayat/:truckId', trackingController.getRiwayatJalur);
 router.get('/ringkasan/:truckId', trackingController.getRingkasanHasil);
 
-
+router.get('/riwayat-selesai', trackingController.getRiwayatSelesai);
 router.post('/update-lokasi', trackingController.updateLokasiTruk);
 router.post('/mulai-kerja', trackingController.mulaiKerja);
 router.post('/selesai-kerja', trackingController.selesaiKerja);
