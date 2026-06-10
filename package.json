@@ -2,11 +2,12 @@
   "name": "platform-sampah",
   "version": "1.0.0",
   "description": "Backend Platform Sampah",
-  "main": "index.js",
-  "type": "module",
+  "main": "dist/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "npx tsx watch src/index.ts"
+    "dev": "tsx watch src/index.ts",
+    "build": "prisma generate && tsc",
+    "start": "node dist/index.js"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
