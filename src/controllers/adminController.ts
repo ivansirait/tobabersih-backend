@@ -2,246 +2,6 @@ import type { Request, Response } from 'express';
 import { prisma } from '../config/db.js';
 import * as bcrypt from 'bcrypt';
 
-// ═════════════════════════════════════════════════════════════
-// BUAT AKUN KABID
-// POST /api/admin/kabid
-// ═════════════════════════════════════════════════════════════
-export const createKabid = async (
-  req: Request,
-  res: Response
-): Promise<any> => {
-  try {
-    console.log('📨 createKabid - Request body:', req.body);
-    console.log('📨 createKabid - Request headers:', { 
-      contentType: req.headers['content-type'],
-      hasBody: !!req.body,
-      bodyKeys: req.body ? Object.keys(req.body) : []
-    });
-
-    const {
-      email,
-      fullName,
-      password,
-      phoneNumber
-    } = req.body || {};
-
-    if (!email || !fullName || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email, nama lengkap, dan password wajib diisi',
-        received: { email, fullName, password }
-      });
-    }
-
-    const existing = await prisma.user.findUnique({
-      where: { email }
-    });
-
-    if (existing) {
-      return res.status(409).json({
-        success: false,
-        message: 'Email sudah terdaftar'
-      });
-    }
-
-    const passwordHash = await bcrypt.hash(password, 10);
-
-    const newKabid = await prisma.user.create({
-      data: {
-        email,
-        fullName,
-        passwordHash,
-        phoneNumber: phoneNumber || null,
-        role: 'KABID',
-        isActive: true
-      },
-      select: {
-        id: true,
-        email: true,
-        fullName: true,
-        phoneNumber: true,
-        role: true,
-        isActive: true,
-        createdAt: true
-      }
-    });
-
-    return res.status(201).json({
-      success: true,
-      message: 'Akun Kepala Bidang berhasil dibuat',
-      data: {
-        ...newKabid,
-        id: newKabid.id.toString()
-      }
-    });
-
-  } catch (error: any) {
-    console.error('❌ createKabid:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Gagal membuat akun Kepala Bidang',
-      error: error.message
-    });
-  }
-};
-
-// ═════════════════════════════════════════════════════════════
-// GET ALL KABID
-// GET /api/admin/kabid
-// ═════════════════════════════════════════════════════════════
-export const getAllKabid = async (
-  _req: Request,
-  res: Response
-): Promise<any> => {
-  try {
-    const kabidList = await prisma.user.findMany({
-      where: { role: 'KABID' },
-      select: {
-        id: true,
-        email: true,
-        fullName: true,
-        phoneNumber: true,
-        isActive: true,
-        createdAt: true
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-
-    const formatted = kabidList.map((item) => ({
-      ...item,
-      id: item.id.toString()
-    }));
-
-    return res.json({ success: true, data: formatted });
-
-  } catch (error: any) {
-    console.error('❌ getAllKabid:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Gagal mengambil daftar Kepala Bidang'
-    });
-  }
-};
-
-// ═════════════════════════════════════════════════════════════
-// UPDATE KABID
-// PUT /api/admin/kabid/:id
-// ═════════════════════════════════════════════════════════════
-export const updateKabid = async (
-  req: Request,
-  res: Response
-): Promise<any> => {
-  try {
-    const { id } = req.params;
-    const { fullName, phoneNumber, isActive, newPassword } = req.body;
-
-    const kabid = await prisma.user.findFirst({
-      where: {
-        id: BigInt(id as string),  // ✅ Fix
-        role: 'KABID'
-      }
-    });
-
-    if (!kabid) {
-      return res.status(404).json({
-        success: false,
-        message: 'Akun Kepala Bidang tidak ditemukan'
-      });
-    }
-
-    const updateData: any = {};
-    if (fullName !== undefined) updateData.fullName = fullName;
-    if (phoneNumber !== undefined) updateData.phoneNumber = phoneNumber;
-    if (isActive !== undefined) updateData.isActive = isActive;
-    if (newPassword) {
-      updateData.passwordHash = await bcrypt.hash(newPassword, 10);
-    }
-
-    const updated = await prisma.user.update({
-      where: { id: BigInt(id as string) },  // ✅ Fix
-      data: updateData,
-      select: {
-        id: true,
-        email: true,
-        fullName: true,
-        phoneNumber: true,
-        isActive: true,
-        role: true
-      }
-    });
-
-    return res.json({
-      success: true,
-      message: 'Akun Kepala Bidang berhasil diperbarui',
-      data: { ...updated, id: updated.id.toString() }
-    });
-
-  } catch (error: any) {
-    console.error('❌ updateKabid:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Gagal memperbarui akun Kepala Bidang'
-    });
-  }
-};
-
-// ═════════════════════════════════════════════════════════════
-// DELETE / NONAKTIFKAN KABID
-// DELETE /api/admin/kabid/:id
-// ═════════════════════════════════════════════════════════════
-export const deleteKabid = async (
-  req: Request,
-  res: Response
-): Promise<any> => {
-  try {
-    const { id } = req.params;
-
-    const kabid = await prisma.user.findFirst({
-      where: {
-        id: BigInt(id as string),  // ✅ Fix
-        role: 'KABID'
-      }
-    });
-
-    if (!kabid) {
-      return res.status(404).json({
-        success: false,
-        message: 'Akun Kepala Bidang tidak ditemukan'
-      });
-    }
-
-    try {
-      await prisma.user.delete({
-        where: { id: BigInt(id as string) }  // ✅ Fix
-      });
-
-      return res.json({
-        success: true,
-        message: 'Akun Kepala Bidang berhasil dihapus permanen'
-      });
-    } catch (deleteError: any) {
-      console.warn('⚠️ deleteKabid fallback to deactivate:', deleteError?.message ?? deleteError);
-
-      await prisma.user.update({
-        where: { id: BigInt(id as string) },  // ✅ Fix
-        data: { isActive: false }
-      });
-
-      return res.json({
-        success: true,
-        message: 'Akun Kepala Bidang tidak dapat dihapus karena data terkait, akun telah dinonaktifkan sebagai gantinya'
-      });
-    }
-
-  } catch (error: any) {
-    console.error('❌ deleteKabid:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Gagal menghapus akun Kepala Bidang'
-    });
-  }
-};
-
 // ==========================================
 // BAGIAN 1: MANAJEMEN SUPIR (OPERATOR)
 // ==========================================
@@ -319,10 +79,25 @@ export const updateOperator = async (req: Request, res: Response): Promise<any> 
 
   try {
     const existingSupir = await prisma.user.findUnique({
-      where: { id: BigInt(id as string) }  // ✅ Fix
+      where: { id: BigInt(id as string) },
+      include: {
+        tasks: {
+          where: { status: { not: 'SELESAI' } },
+          select: { id: true }
+        }
+      }
     });
+
     if (!existingSupir) {
       return res.status(404).json({ success: false, message: "Supir tidak ditemukan" });
+    }
+
+    // FIX: Cegah nonaktifkan supir yang masih punya tugas aktif
+    if (isActive === false && existingSupir.tasks.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Supir tidak dapat dinonaktifkan karena masih memiliki tugas aktif. Selesaikan semua tugas terlebih dahulu."
+      });
     }
 
     if (email && email !== existingSupir.email) {
@@ -332,7 +107,27 @@ export const updateOperator = async (req: Request, res: Response): Promise<any> 
       }
     }
 
-    const dataUpdate: any = { fullName, email, phoneNumber, isActive };
+    // FIX: Deteksi perubahan di backend juga untuk keamanan
+    const hasChanges =
+      (fullName !== undefined && fullName !== existingSupir.fullName) ||
+      (email !== undefined && email !== existingSupir.email) ||
+      (phoneNumber !== undefined && phoneNumber !== existingSupir.phoneNumber) ||
+      (isActive !== undefined && isActive !== existingSupir.isActive) ||
+      (password && password.trim() !== "");
+
+    if (!hasChanges) {
+      return res.status(200).json({
+        success: true,
+        message: "Tidak ada perubahan data",
+        data: { ...existingSupir, id: existingSupir.id.toString() }
+      });
+    }
+
+    const dataUpdate: any = {};
+    if (fullName !== undefined) dataUpdate.fullName = fullName;
+    if (email !== undefined) dataUpdate.email = email;
+    if (phoneNumber !== undefined) dataUpdate.phoneNumber = phoneNumber;
+    if (isActive !== undefined) dataUpdate.isActive = isActive;
 
     if (password && password.trim() !== "") {
       const salt = await bcrypt.genSalt(10);
@@ -340,7 +135,7 @@ export const updateOperator = async (req: Request, res: Response): Promise<any> 
     }
 
     const supirDiupdate = await prisma.user.update({
-      where: { id: BigInt(id as string) },  // ✅ Fix
+      where: { id: BigInt(id as string) },
       data: dataUpdate
     });
 
@@ -363,7 +158,7 @@ export const deleteOperator = async (req: Request, res: Response): Promise<any> 
   try {
     const activeTask = await prisma.task.findFirst({
       where: {
-        driverId: BigInt(id as string),  // ✅ Fix
+        driverId: BigInt(id as string),
         status: { not: 'SELESAI' }
       }
     });
@@ -376,7 +171,7 @@ export const deleteOperator = async (req: Request, res: Response): Promise<any> 
     }
 
     await prisma.user.delete({
-      where: { id: BigInt(id as string) }  // ✅ Fix
+      where: { id: BigInt(id as string) }
     });
 
     return res.status(200).json({ success: true, message: "Supir berhasil dihapus" });
@@ -405,7 +200,7 @@ export const tugaskanLaporan = async (req: Request, res: Response): Promise<any>
 
   try {
     await prisma.report.update({
-      where: { id: BigInt(idLaporan as string) },  // ✅ Fix
+      where: { id: BigInt(idLaporan as string) },
       data: { status: 'DITINDAKLANJUTI' }
     });
 
@@ -446,11 +241,26 @@ export const getSemuaTruk = async (req: Request, res: Response): Promise<any> =>
 };
 
 export const addTruk = async (req: Request, res: Response): Promise<any> => {
-  const { plateNumber, operatorId, status, lastLocation, unitCode, brand, truckType } = req.body;
+  // FIX: Tidak terima 'status' dari body saat create — selalu AVAILABLE
+  const { plateNumber, operatorId, lastLocation, unitCode, brand, truckType } = req.body;
+
   try {
     const existingTruk = await prisma.truck.findUnique({ where: { plateNumber } });
     if (existingTruk) {
       return res.status(400).json({ success: false, message: "Plat nomor ini sudah terdaftar!" });
+    }
+
+    // FIX: Enforce 1-to-1 — cek apakah supir ini sudah punya truk
+    if (operatorId) {
+      const existingTrukForOperator = await prisma.truck.findFirst({
+        where: { operatorId: BigInt(operatorId as string) }
+      });
+      if (existingTrukForOperator) {
+        return res.status(400).json({
+          success: false,
+          message: "Supir ini sudah memiliki truk yang terdaftar. Satu supir hanya dapat mengelola satu armada."
+        });
+      }
     }
 
     await prisma.truck.create({
@@ -459,9 +269,9 @@ export const addTruk = async (req: Request, res: Response): Promise<any> => {
         unitCode,
         brand,
         truckType,
-        status: status || 'AVAILABLE',
+        status: 'AVAILABLE', // FIX: Selalu AVAILABLE saat create
         lastLocation: lastLocation || '',
-        operatorId: operatorId ? BigInt(operatorId as string) : null  // ✅ Fix
+        operatorId: operatorId ? BigInt(operatorId as string) : null
       }
     });
 
@@ -473,17 +283,64 @@ export const addTruk = async (req: Request, res: Response): Promise<any> => {
 
 export const updateTruk = async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
-  const { plateNumber, operatorId, status, lastLocation } = req.body;
+  const { plateNumber, operatorId, status, lastLocation, unitCode, brand, truckType } = req.body;
+
   try {
+    const existingTruk = await prisma.truck.findUnique({
+      where: { id: BigInt(id as string) }
+    });
+
+    if (!existingTruk) {
+      return res.status(404).json({ success: false, message: "Truk tidak ditemukan" });
+    }
+
+    // FIX: Enforce 1-to-1 — cek supir baru tidak sudah punya truk lain
+    if (operatorId && BigInt(operatorId) !== existingTruk.operatorId) {
+      const existingTrukForOperator = await prisma.truck.findFirst({
+        where: {
+          operatorId: BigInt(operatorId as string),
+          id: { not: BigInt(id as string) } // Exclude truk yang sedang diedit
+        }
+      });
+      if (existingTrukForOperator) {
+        return res.status(400).json({
+          success: false,
+          message: "Supir ini sudah memiliki truk yang terdaftar. Satu supir hanya dapat mengelola satu armada."
+        });
+      }
+    }
+
+    // FIX: Deteksi perubahan di backend
+    const newOperatorId = operatorId ? BigInt(operatorId as string) : null;
+    const hasChanges =
+      (plateNumber !== undefined && plateNumber !== existingTruk.plateNumber) ||
+      (unitCode !== undefined && unitCode !== existingTruk.unitCode) ||
+      (brand !== undefined && brand !== existingTruk.brand) ||
+      (truckType !== undefined && truckType !== existingTruk.truckType) ||
+      (status !== undefined && status !== existingTruk.status) ||
+      (lastLocation !== undefined && lastLocation !== existingTruk.lastLocation) ||
+      (newOperatorId?.toString() !== existingTruk.operatorId?.toString());
+
+    if (!hasChanges) {
+      return res.status(200).json({
+        success: true,
+        message: "Tidak ada perubahan data"
+      });
+    }
+
     await prisma.truck.update({
-      where: { id: BigInt(id as string) },  // ✅ Fix
+      where: { id: BigInt(id as string) },
       data: {
         plateNumber,
+        unitCode,
+        brand,
+        truckType,
         status,
         lastLocation: lastLocation,
-        operatorId: operatorId ? BigInt(operatorId as string) : null  // ✅ Fix
+        operatorId: operatorId ? BigInt(operatorId as string) : null
       }
     });
+
     return res.status(200).json({ success: true, message: "Data truk berhasil diperbarui" });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
@@ -493,7 +350,7 @@ export const updateTruk = async (req: Request, res: Response): Promise<any> => {
 export const deleteTruk = async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   try {
-    await prisma.truck.delete({ where: { id: BigInt(id as string) } });  // ✅ Fix
+    await prisma.truck.delete({ where: { id: BigInt(id as string) } });
     return res.status(200).json({ success: true, message: "Truk berhasil dihapus" });
   } catch (error: any) {
     if (error.code === 'P2003') {

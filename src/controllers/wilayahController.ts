@@ -64,9 +64,7 @@ export const getAllWilayah = async (req: Request, res: Response) => {
       name: w.name,
       code: w.code,
       isActive: w.isActive,
-      population: null,        // ✅ Fix: field tidak ada di schema
       address: w.address,
-      capacityVolume: null,    // ✅ Fix: field tidak ada di schema
       latitude: w.latitude.toString(),
       longitude: w.longitude.toString(),
       radius: w.radius,

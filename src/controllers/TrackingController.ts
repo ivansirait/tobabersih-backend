@@ -34,8 +34,32 @@ function hitungJarak(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// ─── Helper: konversi lat/lng ke koordinat meter lokal (equirectangular) ───
+function latLngToMeter(lat: number, lng: number, refLat: number): { x: number; y: number } {
+  const R = 6371000; // radius bumi (meter)
+  const x = (lng * Math.PI / 180) * R * Math.cos((refLat * Math.PI) / 180);
+  const y = (lat * Math.PI / 180) * R;
+  return { x, y };
+}
+
+// ─── Helper: jarak titik ke segmen garis A-B (meter) ───
+function jarakTitikKeSegmen(
+  px: number, py: number,
+  ax: number, ay: number,
+  bx: number, by: number
+): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - ax, py - ay);
+  let t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t)); // clamp ke segmen, bukan garis tak terbatas
+  const projX = ax + t * dx;
+  const projY = ay + t * dy;
+  return Math.hypot(px - projX, py - projY);
+}
+
 async function getRuteDariDB(truckId: bigint, hari: string) {
-  // Query terpisah karena relasi tidak bisa di-include langsung
   const rute = await prisma.routeTemplate.findFirst({
     where: { truckId, dayOfWeek: hari, isActive: true },
     include: { waypoints: { orderBy: { order: 'asc' } } },
@@ -57,34 +81,35 @@ async function getRuteDariDB(truckId: bigint, hari: string) {
 
 // ============================================================
 // GET: Truk aktif - UNTUK TRACKING REAL-TIME
-// ✅ Tampilkan SEMUA truk yang punya jadwal hari ini (bukan hanya BUSY)
 // ============================================================
 export const getTrukAktif = async (req: Request, res: Response): Promise<any> => {
   try {
     const hariIni = getNamaHariIni();
 
-    // console.log(`[DEBUG] Hari ini: ${hariIni}`);
-
     const trukList = await prisma.truck.findMany({
       where: {
-        routesTemplate: {
+        routeTemplates: {          // ✅ FIX: was routesTemplate
           some: {
             dayOfWeek: hariIni,
             isActive: true,
-          }
-        }
+          },
+        },
       },
       include: {
         operator: {
           select: { id: true, fullName: true, phoneNumber: true },
         },
-        tasks: {
-          where: { status: { in: ['DITERIMA', 'DALAM_PERJALANAN', 'TIBA', 'BEKERJA'] } },
-          orderBy: { updatedAt: 'desc' },
-          take: 1,
-          select: { status: true, location: true, district: true },
-        },
-        routesTemplate: {
+       tasks: {
+    where: { status: { in: ['DITERIMA', 'DALAM_PERJALANAN', 'TIBA', 'BEKERJA'] } },
+    orderBy: { updatedAt: 'desc' },
+    take: 1,
+    select: { 
+      status: true, 
+      location: true
+      // district: true  ← SUDAH DIHAPUS
+    },
+  },
+        routeTemplates: {          // ✅ FIX: was routesTemplate
           where: { dayOfWeek: hariIni, isActive: true },
           include: { waypoints: { orderBy: { order: 'asc' } } },
           take: 1,
@@ -103,11 +128,11 @@ export const getTrukAktif = async (req: Request, res: Response): Promise<any> =>
       const lastLoc   = truk.locationHistory[0] ?? null;
       const taskAktif = truk.tasks[0] ?? null;
 
-      const ruteHariIni = truk.routesTemplate[0]
+      const ruteHariIni = truk.routeTemplates[0]   // ✅ FIX: was routesTemplate
         ? {
-            hari:     truk.routesTemplate[0].dayOfWeek,
-            namaHari: truk.routesTemplate[0].dayOfWeek,
-            waypoints: truk.routesTemplate[0].waypoints.map((wp) => ({
+            hari:      truk.routeTemplates[0].dayOfWeek,
+            namaHari:  truk.routeTemplates[0].dayOfWeek,
+            waypoints: truk.routeTemplates[0].waypoints.map((wp) => ({
               urutan: wp.order,
               nama:   wp.name,
               lat:    Number(wp.latitude),
@@ -119,7 +144,7 @@ export const getTrukAktif = async (req: Request, res: Response): Promise<any> =>
       return {
         id:          truk.id.toString(),
         plateNumber: truk.plateNumber,
-        status:      truk.status, // Bisa "AVAILABLE" atau "BUSY"
+        status:      truk.status,
         currentLat:  lastLoc ? Number(lastLoc.latitude)  : (truk.currentLat  ? Number(truk.currentLat)  : null),
         currentLong: lastLoc ? Number(lastLoc.longitude) : (truk.currentLong ? Number(truk.currentLong) : null),
         lastPing:    lastLoc?.createdAt?.toISOString() ?? truk.lastPing?.toISOString() ?? null,
@@ -127,9 +152,9 @@ export const getTrukAktif = async (req: Request, res: Response): Promise<any> =>
         operator: truk.operator
           ? { id: truk.operator.id.toString(), fullName: truk.operator.fullName, phoneNumber: truk.operator.phoneNumber }
           : null,
-        taskAktif: taskAktif
-          ? { status: taskAktif.status, location: taskAktif.location, district: taskAktif.district }
-          : null,
+          taskAktif: taskAktif
+            ? { status: taskAktif.status, location: taskAktif.location }
+            : null,
         ruteHariIni,
       };
     });
@@ -143,8 +168,6 @@ export const getTrukAktif = async (req: Request, res: Response): Promise<any> =>
 
 // ============================================================
 // GET: Riwayat jalur truk berdasarkan tanggal
-// ✅ Schema: relasi di Truck adalah "locationHistory" (bukan locationHistories)
-// ✅ truckIdStr: handle kasus req.params bisa berupa array di beberapa konfigurasi router
 // ============================================================
 export const getRiwayatJalur = async (req: Request, res: Response): Promise<any> => {
   const { truckId } = req.params;
@@ -226,8 +249,6 @@ export const getRiwayatJalur = async (req: Request, res: Response): Promise<any>
 
 // ============================================================
 // GET: Ringkasan hasil kerja setelah rute selesai
-// ✅ Task tidak punya volumeKg & notes → dihapus dari query
-// ✅ truckIdStr + validasi isNaN untuk keamanan input
 // ============================================================
 export const getRingkasanHasil = async (req: Request, res: Response): Promise<any> => {
   const { truckId } = req.params;
@@ -238,7 +259,7 @@ export const getRingkasanHasil = async (req: Request, res: Response): Promise<an
   if (!truckIdStr || isNaN(Number(truckIdStr))) {
     return res.status(400).json({
       success: false,
-      message: 'ID truk tidak valid'
+      message: 'ID truk tidak valid',
     });
   }
 
@@ -248,19 +269,18 @@ export const getRingkasanHasil = async (req: Request, res: Response): Promise<an
     const endDate   = new Date(`${tglStr}T23:59:59+07:00`);
 
     const [taskSelesai, history, truk] = await Promise.all([
-      prisma.task.findMany({
-        where: {
-          truckId:     BigInt(truckIdStr),
-          completedAt: { gte: startDate, lte: endDate },
-          status:      'SELESAI',
-        },
-        include: {
-          photos: true,
-          // ✅ Report tidak punya jenisSampah di schema → hanya ambil description
-          report: { select: { description: true } },
-        },
-        orderBy: { completedAt: 'asc' },
-      }),
+            prisma.task.findMany({
+            where: {
+              truckId:   BigInt(truckIdStr),
+              updatedAt: { gte: startDate, lte: endDate },  // ✅ pakai updatedAt
+              status:    'SELESAI',
+            },
+            include: {
+              photo: true,   // ✅ singular sesuai schema (TaskPhoto one-to-one)
+            },
+            orderBy: { updatedAt: 'asc' },  // ✅ pakai updatedAt
+          }),
+
       prisma.locationHistory.findMany({
         where: {
           truckId:   BigInt(truckIdStr),
@@ -320,15 +340,13 @@ export const getRingkasanHasil = async (req: Request, res: Response): Promise<an
           waktuMulai:   jalur.length > 0 ? jalur[0].timestamp : null,
           waktuSelesai: jalur.length > 0 ? jalur[jalur.length - 1].timestamp : null,
         },
-        // ✅ Task: field yang ada → id, location, district, completedAt, photos
-        detailTask: taskSelesai.map((t) => ({
-          id:               t.id.toString(),
-          location:         t.location,
-          district:         t.district,
-          completedAt:      t.completedAt,
-          jumlahFoto:       t.photos.length,
-          deskripsiLaporan: t.report?.description ?? null,
-        })),
+      detailTask: taskSelesai.map((t) => ({
+        id:               t.id.toString(),
+        location:         t.location,
+        completedAt:      t.updatedAt,         
+        jumlahFoto:       t.photo ? 1 : 0,        
+        deskripsiLaporan: null,                    
+      })),
         jalurAktual: jalur,
         ruteJadwal,
       },
@@ -341,8 +359,6 @@ export const getRingkasanHasil = async (req: Request, res: Response): Promise<an
 
 // ============================================================
 // GET: Riwayat SEMUA truk yang punya rekaman GPS di tanggal tsb
-// Route: GET /tracking/riwayat-selesai?tanggal=2026-06-04
-// ✅ Nama relasi di schema Truck: "locationHistory" (bukan locationHistories)
 // ============================================================
 export const getRiwayatSelesai = async (req: Request, res: Response): Promise<any> => {
   const { tanggal } = req.query;
@@ -394,7 +410,7 @@ export const getRiwayatSelesai = async (req: Request, res: Response): Promise<an
         trukId:       truk.id.toString(),
         plateNumber:  truk.plateNumber,
         operatorName: truk.operator?.fullName ?? '-',
-        status:       truk.status, // AVAILABLE = sudah selesai, BUSY = masih kerja
+        status:       truk.status,
         tanggal:      tglStr,
         ringkasan: {
           totalTitikLokasi: history.length,
@@ -407,8 +423,6 @@ export const getRiwayatSelesai = async (req: Request, res: Response): Promise<an
       };
     });
 
-    // Frontend riwayat hanya perlu yang AVAILABLE, tapi kita kirim semua
-    // biar frontend bisa filter sesuai kebutuhan
     return res.status(200).json({
       success: true,
       data:    hasil,
@@ -427,16 +441,14 @@ export const getRiwayatSelesai = async (req: Request, res: Response): Promise<an
 
 // ============================================================
 // GET: Jadwal rute
-// ✅ hariStr: handle kasus req.params bisa berupa array
 // ============================================================
 export const getJadwalRute = async (req: Request, res: Response): Promise<any> => {
   const { hari }    = req.params;
   const { truckId } = req.query;
 
   try {
-    // ✅ Pastikan hari adalah string tunggal
-    const hariStr    = Array.isArray(hari) ? hari[0] : hari;
-    const hariUpper  = (hariStr || '').toUpperCase();
+    const hariStr   = Array.isArray(hari) ? hari[0] : hari;
+    const hariUpper = (hariStr || '').toUpperCase();
 
     if (hariUpper === 'SEMUA') {
       const semua = await prisma.routeTemplate.findMany({
@@ -490,59 +502,128 @@ export const getJadwalRute = async (req: Request, res: Response): Promise<any> =
 // ============================================================
 // POST: Supir kirim lokasi GPS dari HP
 // ============================================================
-export const updateLokasiTruk = async (req: Request, res: Response): Promise<any> => {
-  const { truckId, latitude, longitude } = req.body;
+  export const updateLokasiTruk = async (req: Request, res: Response): Promise<any> => {
+    const { truckId, latitude, longitude } = req.body;
 
-  if (!truckId || latitude === undefined || longitude === undefined) {
-    return res.status(400).json({
-      success: false,
-      message: 'truckId, latitude, longitude wajib diisi',
-    });
-  }
-
-  const lat = Number(latitude);
-  const lng = Number(longitude);
-
-  if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-    return res.status(400).json({ success: false, message: 'Koordinat tidak valid' });
-  }
-
-  try {
-    await prisma.truck.update({
-      where: { id: BigInt(truckId) },
-      data: {
-        currentLat:  lat.toString(),
-        currentLong: lng.toString(),
-        lastPing:    new Date(),
-      },
-    });
-
-    // ✅ Model: LocationHistory (bukan locationHistories)
-    await prisma.locationHistory.create({
-      data: {
-        truckId:   BigInt(truckId),
-        latitude:  lat.toString(),
-        longitude: lng.toString(),
-      },
-    });
-
-    const io = req.app.get('io');
-    if (io) {
-      io.emit('truck_location_update', {
-        truckId:   truckId.toString(),
-        latitude:  lat,
-        longitude: lng,
-        timestamp: new Date().toISOString(),
+    if (!truckId || latitude === undefined || longitude === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'truckId, latitude, longitude wajib diisi',
       });
     }
 
-    return res.status(200).json({ success: true, message: 'Lokasi berhasil diupdate' });
-  } catch (error: any) {
-    console.error('updateLokasiTruk error:', error);
-    return res.status(500).json({ success: false, message: error.message });
-  }
-};
+    const lat = Number(latitude);
+    const lng = Number(longitude);
 
+    if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      return res.status(400).json({ success: false, message: 'Koordinat tidak valid' });
+    }
+
+    try {
+      // ── Ambil rute aktif truk hari ini (waypoints HARUS diurutkan!) ──
+      const hariIni = getNamaHariIni();
+      const ruteAktif = await prisma.routeTemplate.findFirst({
+        where: { truckId: BigInt(truckId), dayOfWeek: hariIni, isActive: true },
+        include: { waypoints: { orderBy: { order: 'asc' } } },
+      });
+
+      console.log(`[GPS] Truk ${truckId} | hari=${hariIni} | rute ditemukan=${!!ruteAktif} | jumlah waypoint=${ruteAktif?.waypoints.length ?? 0}`);
+
+      // ── Jika tidak ada rute aktif / waypoint kosong → TOLAK ──
+      if (!ruteAktif || ruteAktif.waypoints.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Truk belum memiliki rute aktif untuk hari ${hariIni}. Hubungi admin untuk mengatur rute terlebih dahulu.`,
+        });
+      }
+
+      const RADIUS_METER = 100;
+      const waypoints = ruteAktif.waypoints;
+
+      // ── Konversi semua titik ke koordinat meter lokal (referensi = lokasi driver) ──
+      const driverXY = latLngToMeter(lat, lng, lat);
+      const waypointsXY = waypoints.map((wp) => ({
+        ...wp,
+        xy: latLngToMeter(Number(wp.latitude), Number(wp.longitude), lat),
+      }));
+
+      let jarakMinimal = Infinity;
+      let segmenTerdekat = '';
+
+      if (waypointsXY.length === 1) {
+        // Hanya 1 titik → cek jarak titik-ke-titik biasa
+        const wp = waypointsXY[0];
+        jarakMinimal = Math.hypot(driverXY.x - wp.xy.x, driverXY.y - wp.xy.y);
+        segmenTerdekat = wp.name;
+      } else {
+        // Cek jarak ke SETIAP SEGMEN garis antar waypoint berurutan (jalur rute)
+        for (let i = 0; i < waypointsXY.length - 1; i++) {
+          const a = waypointsXY[i];
+          const b = waypointsXY[i + 1];
+          const jarak = jarakTitikKeSegmen(
+            driverXY.x, driverXY.y,
+            a.xy.x, a.xy.y,
+            b.xy.x, b.xy.y
+          );
+          if (jarak < jarakMinimal) {
+            jarakMinimal = jarak;
+            segmenTerdekat = `${a.name} → ${b.name}`;
+          }
+        }
+      }
+
+      jarakMinimal = Math.round(jarakMinimal);
+
+      // ── Jika lokasi terlalu jauh dari JALUR rute → TOLAK ──
+      if (jarakMinimal > RADIUS_METER) {
+        console.warn(`[GPS REJECTED] Truk ${truckId} berada ${jarakMinimal}m dari rute (segmen terdekat: "${segmenTerdekat}")`);
+        return res.status(400).json({
+          success: false,
+          message: `Lokasi Anda berada ${jarakMinimal}m dari jalur rute (dekat segmen "${segmenTerdekat}"). Maksimal ${RADIUS_METER}m dari jalur rute yang ditetapkan.`,
+          data: {
+            jarakDariRute: jarakMinimal,
+            segmenTerdekat,
+            radiusMaksimal: RADIUS_METER,
+          },
+        });
+      }
+
+      console.log(`[GPS OK] Truk ${truckId} berada ${jarakMinimal}m dari rute (segmen: "${segmenTerdekat}") ✅`);
+
+      // ── Simpan lokasi ────────────────────────────────────────
+      await prisma.truck.update({
+        where: { id: BigInt(truckId) },
+        data: {
+          currentLat:  lat.toString(),
+          currentLong: lng.toString(),
+          lastPing:    new Date(),
+        },
+      });
+
+      await prisma.locationHistory.create({
+        data: {
+          truckId:   BigInt(truckId),
+          latitude:  lat.toString(),
+          longitude: lng.toString(),
+        },
+      });
+
+      const io = req.app.get('io');
+      if (io) {
+        io.emit('truck_location_update', {
+          truckId:   truckId.toString(),
+          latitude:  lat,
+          longitude: lng,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      return res.status(200).json({ success: true, message: 'Lokasi berhasil diupdate' });
+    } catch (error: any) {
+      console.error('updateLokasiTruk error:', error);
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  };
 // ============================================================
 // POST: Supir mulai kerja → status truk BUSY
 // ============================================================
@@ -599,7 +680,6 @@ export const mulaiKerja = async (req: Request, res: Response): Promise<any> => {
 
 // ============================================================
 // POST: Supir selesai kerja → status truk AVAILABLE
-// ✅ Socket broadcast menyertakan ringkasan agar frontend langsung update riwayat
 // ============================================================
 export const selesaiKerja = async (req: Request, res: Response): Promise<any> => {
   const { truckId } = req.body;
@@ -631,7 +711,6 @@ export const selesaiKerja = async (req: Request, res: Response): Promise<any> =>
     const endDate = new Date();
     endDate.setHours(23, 59, 59, 999);
 
-    // ✅ Nama relasi Prisma: locationHistory
     const history = await prisma.locationHistory.findMany({
       where:   { truckId: BigInt(truckId), createdAt: { gte: startDate, lte: endDate } },
       orderBy: { createdAt: 'asc' },
@@ -664,8 +743,6 @@ export const selesaiKerja = async (req: Request, res: Response): Promise<any> =>
 
     const io = req.app.get('io');
     if (io) {
-      // ✅ Sertakan plateNumber, operatorName, tanggal agar frontend
-      //    langsung tambah ke riwayat tanpa fetch ulang
       io.emit('truck_status_update', {
         truckId:      truckId.toString(),
         status:       'AVAILABLE',

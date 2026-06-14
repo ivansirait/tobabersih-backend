@@ -85,7 +85,7 @@ export const createPelanggan = async (req: any, res: any) => {
         nama:       nama.trim(),
         alamat:     alamat?.trim()     ?? "",
         jenisUsaha: jenisUsaha?.trim() ?? "Rumah Tangga",
-        ...(driverId ? { driverId: BigInt(driverId) } : {}),
+        driverId:   driverId ? BigInt(driverId) : undefined,
       },
       include: { driver: { select: { id: true, fullName: true } } },
     });
@@ -124,14 +124,14 @@ export const bulkCreatePelanggan = async (req: any, res: any) => {
       }
 
       try {
-        await prisma.pelanggan.create({
-          data: {
-            nama:       nama.trim(),
-            alamat:     alamat?.trim()     ?? "",
-            jenisUsaha: jenisUsaha?.trim() ?? "Rumah Tangga",
-            ...(driverId ? { driverId: BigInt(driverId) } : {}),
-          },
-        });
+      await prisma.pelanggan.create({
+        data: {
+          nama:       nama.trim(),
+          alamat:     alamat?.trim()     ?? "",
+          jenisUsaha: jenisUsaha?.trim() ?? "Rumah Tangga",
+          driverId:   driverId ? BigInt(driverId) : undefined,
+        },
+      });
         results.push({ nama: nama.trim(), status: "success", message: "Berhasil didaftarkan" });
         successCount++;
       } catch (err: any) {

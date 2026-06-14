@@ -524,14 +524,14 @@ export const getRingkasanHasil = async (req: Request, res: Response): Promise<an
 
     let taskSelesai: any[] = [];
     try {
-      taskSelesai = await prisma.task.findMany({
-        where: {
-          truckId:     BigInt(truckId as string),  // ✅ Fix
-          completedAt: { gte: startDate, lte: endDate },
-          status:      'SELESAI'
-        },
-        orderBy: { completedAt: 'asc' }
-      });
+ taskSelesai = await prisma.task.findMany({
+  where: {
+    truckId:   BigInt(truckId as string),
+    updatedAt: { gte: startDate, lte: endDate },  // ✅ pakai updatedAt
+    status:    'SELESAI'
+  },
+  orderBy: { updatedAt: 'asc' }  // ✅ pakai updatedAt
+});
     } catch (taskErr) {
       console.warn('getRingkasanHasil: query task gagal:', taskErr);
       taskSelesai = [];
@@ -583,9 +583,7 @@ export const getRingkasanHasil = async (req: Request, res: Response): Promise<an
           id:          t.id?.toString(),
           location:    t.location,
           district:    t.district,
-          completedAt: t.completedAt,
-          volumeKg:    t.volumeKg ? Number(t.volumeKg) : null,
-          notes:       t.notes,
+          completedAt: t.updatedAt,   // ✅ pakai updatedAt sebagai pengganti
           jumlahFoto:  0
         })),
         jalurAktual: jalur,

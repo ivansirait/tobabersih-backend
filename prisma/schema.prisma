@@ -22,33 +22,46 @@ model User {
   updatedAt     DateTime       @default(now()) @updatedAt @map("updated_at")
   isActive      Boolean        @default(true)
   fcm_token     String?
-  driverId      BigInt?        @map("driver_id")
-  jenisUsaha    String?        @default("Rumah Tangga") @map("jenis_usaha")
   notifications Notification[]
   posts         Post[]
   reports       Report[]
   assigned      Task[]         @relation("TaskAssigner")
   tasks         Task[]         @relation("TaskDriver")
-  trucks        Truck[]
-  driver        User?          @relation("DriverPelanggan", fields: [driverId], references: [id])
-  pelanggan     User[]         @relation("DriverPelanggan")
+  // FIX: One-to-One dengan Truck — satu operator hanya boleh memegang satu truk
+  truck         Truck?
+  // Pelanggan yang ditangani oleh driver ini
+  pelanggan     Pelanggan[]
 
   @@map("users")
 }
 
+model Pelanggan {
+  id         BigInt   @id @default(autoincrement())
+  nama       String
+  alamat     String
+  jenisUsaha String
+  // FIX: driverId wajib (non-optional) — pelanggan harus selalu punya driver
+  // Jika ingin ganti driver, ganti driverId dulu baru driver lama bisa dihapus
+  driverId   BigInt
+  driver     User     @relation(fields: [driverId], references: [id])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("pelanggan")
+}
+
 model Location {
-  id             BigInt                    @id @default(autoincrement())
-  name           String
-  locationType   String                    @map("location_type")
-  isActive       Boolean                   @default(true) @map("is_active")
-  code           String?                   @unique
-  latitude       Decimal                   @db.Decimal(10, 8)
-  longitude      Decimal                   @db.Decimal(11, 8)
-  address        String?
-  createdAt      DateTime                  @default(now()) @map("created_at")
-  updatedAt      DateTime                  @default(now()) @map("updated_at")
-  radius         Int?
-  routesStart    Route[]                   @relation("StartLocation")
+  id           BigInt   @id @default(autoincrement())
+  name         String
+  locationType String   @map("location_type")
+  isActive     Boolean  @default(true) @map("is_active")
+  code         String?  @unique
+  latitude     Decimal  @db.Decimal(10, 8)
+  longitude    Decimal  @db.Decimal(11, 8)
+  address      String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @map("updated_at")
+  radius       Int?
 
   @@map("locations")
 }
@@ -67,6 +80,7 @@ model Report {
   email         String?
   pelapor       String?
   user          User?        @relation(fields: [userId], references: [id])
+  // One-to-One: satu laporan -> satu task (sudah benar via @unique di Task.reportId)
   task          Task?
 
   @@map("reports")
@@ -75,7 +89,8 @@ model Report {
 model Truck {
   id              BigInt            @id @default(autoincrement())
   plateNumber     String            @unique @map("plate_number")
-  operatorId      BigInt?           @map("operator_id")
+  // FIX: @unique memastikan One-to-One — satu operator hanya bisa memegang satu truk
+  operatorId      BigInt?           @unique @map("operator_id")
   currentLat      Decimal?          @map("current_lat") @db.Decimal(10, 8)
   currentLong     Decimal?          @map("current_long") @db.Decimal(11, 8)
   lastPing        DateTime?         @map("last_ping")
@@ -87,9 +102,9 @@ model Truck {
   unitCode        String?           @map("unit_code")
   lastLocation    String?           @map("last_location")
   locationHistory LocationHistory[]
-  routesTemplate  RouteTemplate[]
-  routes          Route[]
   tasks           Task[]
+  // FIX: tambahkan field balik untuk RouteTemplate (diperlukan Prisma)
+  routeTemplates  RouteTemplate[]
   operator        User?             @relation(fields: [operatorId], references: [id])
 
   @@map("trucks")
@@ -106,6 +121,7 @@ model RouteTemplate {
   truck     Truck           @relation(fields: [truckId], references: [id], onDelete: Cascade)
   waypoints RouteWaypoint[]
 
+  // Satu truk hanya boleh punya satu template per hari
   @@unique([truckId, dayOfWeek])
   @@map("route_templates")
 }
@@ -135,18 +151,6 @@ model LocationHistory {
   @@map("location_history")
 }
 
-model Route {
-  id              BigInt    @id @default(autoincrement())
-  truckId         BigInt    @map("truck_id")
-  date            DateTime  @db.Date
-  startLocationId BigInt?   @map("start_location_id")
-  status          String    @default("PLANNED") @map("route_status")
-  startLocation   Location? @relation("StartLocation", fields: [startLocationId], references: [id])
-  truck           Truck     @relation(fields: [truckId], references: [id])
-
-  @@map("routes")
-}
-
 model Post {
   id          Int      @id @default(autoincrement())
   title       String
@@ -159,6 +163,7 @@ model Post {
   authorId    BigInt   @map("author_id")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
+  // Relasi dipertahankan; pembatasan "hanya Admin" dihandle di layer aplikasi
   author      User     @relation(fields: [authorId], references: [id])
 
   @@map("posts")
@@ -177,43 +182,40 @@ model Notification {
 }
 
 model Task {
-  id           BigInt      @id @default(autoincrement())
-  taskNumber   String      @unique @map("task_number")
-  type         String
-  status       TaskStatus  @default(DITUGASKAN)
-  driverId     BigInt?     @map("driver_id")
-  truckId      BigInt?     @map("truck_id")
-  assignerId   BigInt?     @map("assigner_id")
-  reportId     BigInt?     @unique @map("report_id")
-  location     String
-  latitude     Decimal?    @db.Decimal(10, 8)
-  longitude    Decimal?    @db.Decimal(11, 8)
-  district     String?
-  description  String?
-  startedAt    DateTime?   @map("started_at")
-  completedAt  DateTime?   @map("completed_at")
-  createdAt    DateTime    @default(now()) @map("created_at")
-  updatedAt    DateTime    @updatedAt @map("updated_at")
-  pelapor      String?
-  notes        String?
-  scheduled_at DateTime    @default(now())
-  volume_kg    Decimal?    @db.Decimal(10, 2)
-  photos       TaskPhoto[]
-  assigner     User?       @relation("TaskAssigner", fields: [assignerId], references: [id])
-  driver       User?       @relation("TaskDriver", fields: [driverId], references: [id])
-  report       Report?     @relation(fields: [reportId], references: [id])
-  truck        Truck?      @relation(fields: [truckId], references: [id])
+  id          BigInt     @id @default(autoincrement())
+  taskNumber  String     @unique @map("task_number")
+  type        String
+  status      TaskStatus @default(DITUGASKAN)
+  driverId    BigInt?    @map("driver_id")
+  truckId     BigInt?    @map("truck_id")
+  assignerId  BigInt?    @map("assigner_id")
+  reportId    BigInt?    @unique @map("report_id")
+  location    String
+  latitude    Decimal?   @db.Decimal(10, 8)
+  longitude   Decimal?   @db.Decimal(11, 8)
+  description String?
+  scheduledAt DateTime?  @map("scheduled_at")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+  pelapor     String?
+  assigner    User?      @relation("TaskAssigner", fields: [assignerId], references: [id])
+  driver      User?      @relation("TaskDriver", fields: [driverId], references: [id])
+  report      Report?    @relation(fields: [reportId], references: [id])
+  truck       Truck?     @relation(fields: [truckId], references: [id])
+  // FIX: One-to-One — satu task hanya punya satu foto (via @unique pada taskId)
+  photo       TaskPhoto?
 
   @@map("tasks")
 }
 
 model TaskPhoto {
-  id        BigInt   @id @default(autoincrement())
-  taskId    BigInt   @map("task_id")
-  photoUrl  String   @map("photo_url")
-  type      String
+  id       BigInt   @id @default(autoincrement())
+  // FIX: @unique memastikan One-to-One — satu task hanya bisa punya satu foto
+  taskId   BigInt   @unique @map("task_id")
+  photoUrl String   @map("photo_url")
+  type     String
   createdAt DateTime @default(now()) @map("created_at")
-  task      Task     @relation(fields: [taskId], references: [id])
+  task     Task     @relation(fields: [taskId], references: [id])
 
   @@map("task_photos")
 }
@@ -247,6 +249,10 @@ model edukasi {
   updated_at DateTime
 }
 
+// ============================================================
+// ENUMS
+// ============================================================
+
 enum Role {
   WARGA
   OPERATOR
@@ -272,13 +278,6 @@ enum Category {
   PENGUMUMAN
   PROFIL_DLH
   EDUKASI
-}
-
-enum WasteType {
-  ORGANIK
-  ANORGANIK
-  B3
-  CAMPURAN
 }
 
 enum TaskStatus {

@@ -28,13 +28,13 @@ import trackingRoutes from './routes/trackingRoutes.js';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env. PORT || 5005;
 
 
 // 1. SETUP CORS YANG BENAR (Pindahkan ke sini, sebelum app.use rute)
 app.use(cors({
   origin: ['http://localhost:3000', 'https://confoundedly-granitic-janetta.ngrok-free.dev',
-    'http://187.77.121.239:3001'
+      'http://187.77.121.239:3001'
   ], 
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning'],

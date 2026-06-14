@@ -10,9 +10,6 @@ import {
   addTruk,
   updateTruk,
   deleteTruk,
-
-  getAllKabid,
-  updateKabid,
 } from '../controllers/adminController.js';
 
 
@@ -33,9 +30,4 @@ router.delete('/truks/:id', authenticateToken, deleteTruk);
 
 // --- Rute Penugasan ---
 router.patch('/laporan/:idLaporan/tugaskan', authenticateToken, tugaskanLaporan);
-
-// --- Manajemen Kepala Bidang (KABID) – hanya ADMIN ---
-router.get('/kabid', authenticateToken, authorizeAdmin, getAllKabid);
-router.put('/kabid', authenticateToken, authorizeAdmin, updateKabid);
-
 export default router;
