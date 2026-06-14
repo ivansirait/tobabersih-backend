@@ -28,7 +28,7 @@ import trackingRoutes from './routes/trackingRoutes.js';
 dotenv.config();
 
 const app = express();
-const PORT = process.env. PORT || 5005;
+const PORT = process.env.PORT || 5000;
 
 
 // 1. SETUP CORS YANG BENAR (Pindahkan ke sini, sebelum app.use rute)
