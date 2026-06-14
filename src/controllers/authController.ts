@@ -210,36 +210,61 @@ export const register = async (req: Request, res: Response): Promise<any> => {
 };
 
 export const verifyToken = async (req: Request, res: Response): Promise<any> => {
+  console.log("\n================ VERIFY TOKEN ================");
+  
   try {
+    console.log("Headers:", req.headers);
+
     const authHeader = req.headers['authorization'];
+    console.log("Authorization:", authHeader);
+
     const token = authHeader && authHeader.split(' ')[1];
     const cookieToken = (req as any).cookies?.token;
     const finalToken = token || cookieToken;
 
-    if (!finalToken) {
-      return res.status(401).json({ success: false, message: 'Token tidak ditemukan', code: 'NO_TOKEN' });
+    console.log("Token Exists:", !!finalToken);
+
+    if (finalToken) {
+      console.log("Token Preview:", finalToken.substring(0, 50) + "...");
     }
 
-    try {
-      const decoded = jwt.verify(finalToken, JWT_SECRET);
-      return res.json({
-        success: true,
-        message: 'Token valid',
-        user: {
-          id: (decoded as any).id,
-          email: (decoded as any).email,
-          name: (decoded as any).fullName,
-          role: (decoded as any).role,
-        }
+    console.log("JWT_SECRET Exists:", !!JWT_SECRET);
+    console.log("JWT_SECRET Length:", JWT_SECRET?.length);
+
+    if (!finalToken) {
+      console.log("❌ NO TOKEN");
+      return res.status(401).json({
+        success: false,
+        message: 'Token tidak ditemukan'
       });
-    } catch (error: any) {
-      let errorCode = 'INVALID_TOKEN';
-      if (error.name === 'TokenExpiredError') errorCode = 'TOKEN_EXPIRED';
-      return res.status(401).json({ success: false, message: 'Token tidak valid atau kadaluarsa', code: errorCode });
     }
+
+    const decoded = jwt.verify(finalToken, JWT_SECRET!);
+
+    console.log("✅ TOKEN VERIFIED");
+    console.log("Decoded:", decoded);
+
+    return res.json({
+      success: true,
+      message: 'Token valid',
+      user: {
+        id: (decoded as any).id,
+        email: (decoded as any).email,
+        name: (decoded as any).fullName,
+        role: (decoded as any).role,
+      }
+    });
 
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Kesalahan server', code: 'INTERNAL_SERVER_ERROR' });
+    console.error("❌ VERIFY ERROR");
+    console.error("Name:", error.name);
+    console.error("Message:", error.message);
+    console.error("Stack:", error.stack);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 };
 
